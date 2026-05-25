@@ -1,0 +1,89 @@
+# bridge
+
+Python FastAPI daemon that spawns `ccusage` to surface local Claude (and other
+LLM-agent) usage data as JSON over HTTP, for the RLCD device to render.
+
+## Prereqs
+
+- Python 3.10+
+- [`uv`](https://docs.astral.sh/uv/) (recommended) or any venv tool
+- Node + `npx` available (we shell out to `ccusage` via `npx -y ccusage@latest`)
+- A populated `~/.claude/projects/` (Claude Code has been used on this machine)
+
+## Run
+
+```bash
+uv sync                       # one-time
+uv run python bridge.py       # serves on :7777
+curl http://localhost:7777/api/usage | jq
+curl 'http://localhost:7777/api/usage?mock=1' | jq   # canned data for firmware bring-up
+curl http://localhost:7777/healthz
+```
+
+## Endpoints
+
+- `GET /healthz` — liveness + cache age.
+- `GET /api/usage` — full usage report (cached `RLCD_CACHE_TTL` seconds, default 60).
+- `GET /api/usage?mock=1` — deterministic mock payload, lets you develop firmware
+  without poking ccusage.
+
+## Response shape
+
+```jsonc
+{
+  "updated_at": "2026-05-25T03:30:00Z",
+  "source": "ccusage",
+  "claude": {
+    "active_block": {                  // current 5h billing window (Claude Pro/Max + API)
+      "started_at": "...", "ends_at": "...",
+      "tokens_used": 112006509, "cost_usd": 77.39,
+      "tokens_limit": null, "percent_used": null,    // null unless RLCD_BLOCK_LIMIT_USD set
+      "minutes_remaining": 91,
+      "projection_tokens": 166M, "projection_cost_usd": 113.23
+    },
+    "weekly":   { "tokens_used": ..., "cost_usd": ..., "percent_used": null },
+    "today":    { "tokens_used": ..., "cost_usd": ... },
+    "month":    { "tokens_used": ..., "cost_usd": ... },
+    "lifetime": { "tokens_used": ..., "cost_usd": ... },
+    "by_model": [
+      { "model": "claude-opus-4-7",    "tokens": ..., "cost_usd": ... },
+      { "model": "claude-sonnet-4-6",  "tokens": ..., "cost_usd": ... }
+    ]
+  },
+  "other": [
+    { "agent": "codex", "today": {...}, "month": {...}, "lifetime": {...} }
+  ]
+}
+```
+
+## Configuration (env vars)
+
+| Var | Default | Notes |
+| --- | --- | --- |
+| `RLCD_HOST` | `0.0.0.0` | bind address |
+| `RLCD_PORT` | `7777` | bind port |
+| `RLCD_CACHE_TTL` | `60` | response cache, seconds. ccusage cold runs take 1-2s, this prevents poll storms |
+| `RLCD_INCLUDE_OTHERS` | `1` | set `0` to skip codex/gemini/copilot probes |
+| `RLCD_WEEKLY_LIMIT_USD` | unset | if set (e.g. `100`), `weekly.percent_used` is computed |
+| `RLCD_BLOCK_LIMIT_USD` | unset | same for the 5h window |
+| `CCUSAGE_CMD` | `npx -y ccusage@latest` | override if you `npm i -g ccusage` and want `ccusage` directly |
+
+> Anthropic does **not** publish your Pro/Max plan's 5h or weekly limits via API.
+> The percent fields stay `null` unless you tell the bridge what your limit is via
+> the env vars above.
+
+## Install as a systemd `--user` unit
+
+```bash
+../scripts/install-bridge-linux.sh
+journalctl --user -u rlcd-bridge -f
+```
+
+## Verification
+
+1. `curl :7777/healthz` returns `{"ok": true}`.
+2. `curl :7777/api/usage?mock=1` returns the canned shape — useful for offline UI work.
+3. `curl :7777/api/usage` shows numbers that match `npx ccusage blocks --active` /
+   `npx ccusage claude daily` for today.
+4. After running a Claude Code session for ~1 min, `active_block.tokens_used`
+   in the next response (≤ `RLCD_CACHE_TTL` seconds later) goes up.

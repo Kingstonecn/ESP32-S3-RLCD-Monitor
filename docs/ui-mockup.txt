@@ -1,0 +1,37 @@
+RLCD UI — terminal-style monospace layout (~42 cols)
+====================================================
+
+Main screen
+-----------
+claude-code @ rlcd ~ $ status        14:30
+──────────────────────────────────────────
+5h window  [██████░░░░] 62%
+  162,438 tokens · $4.21
+  reset in 2h 14m
+
+weekly     [████░░░░░░] 41%
+
+today     382k tok    $9.14
+month    8.4M tok   $187.22
+total   18.2M tok   $214.07
+
+──────────────────────────────────────────
+models: opus 71% · sonnet 24% · haiku 5%
+
+Stale state (bridge unreachable)
+--------------------------------
+claude-code @ rlcd ~ $ status        ⚠ stale
+──────────────────────────────────────────
+last update: 14:23  (07m ago)
+< rest of screen frozen, dimmed >
+
+Secondary screen — multi-LLM (auto-rotate 30s, or button)
+---------------------------------------------------------
+multi-llm today                      14:30
+──────────────────────────────────────────
+claude    382k tok    $9.14
+codex     124k tok    $0.31
+gemini    058k tok    $0.05
+
+──────────────────────────────────────────
+trend (24h)  ▁▂▂▄▅▇█▅▃▂▁▁▁▁▂▃▄▅▆▇█▆▄▂
