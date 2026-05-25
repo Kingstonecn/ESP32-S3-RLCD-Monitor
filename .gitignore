@@ -22,4 +22,8 @@ Thumbs.db
 
 # Local config
 bridge/.env
-firmware/secrets.h
+firmware/main/secrets.h
+
+# Vendor reference (kept locally; not committed)
+ESP32-S3-RLCD-4.2-Demo/
+ESP32-S3-RLCD-4.2-Demo.zip

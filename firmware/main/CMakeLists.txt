@@ -1,24 +1,5 @@
 idf_component_register(
-    SRCS
-        "app_main.c"
-        "net/wifi.c"
-        "net/usage_client.c"
-        "ui/ui_main.c"
-        "ui/ui_styles.c"
-        "drv/display.c"
-        "drv/buttons.c"
-    INCLUDE_DIRS
-        "."
-        "net"
-        "ui"
-        "drv"
-    REQUIRES
-        nvs_flash
-        esp_wifi
-        esp_netif
-        esp_event
-        esp_http_client
-        json
-        lvgl__lvgl
-        esp_lcd
+    SRCS "main.cpp"
+    INCLUDE_DIRS "./"
+    PRIV_REQUIRES port_bsp app_bsp user_app nvs_flash
 )
