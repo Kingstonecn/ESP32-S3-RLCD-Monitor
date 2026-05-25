@@ -64,6 +64,7 @@ curl http://localhost:7777/healthz
 | `RLCD_PORT` | `7777` | bind port |
 | `RLCD_CACHE_TTL` | `60` | response cache, seconds. ccusage cold runs take 1-2s, this prevents poll storms |
 | `RLCD_INCLUDE_OTHERS` | `1` | set `0` to skip codex/gemini/copilot probes |
+| `RLCD_AUTH_TOKEN` | unset | if set, requests must carry `X-RLCD-Token: <value>` (or `?token=<value>`). Required when bridge is reachable from anything beyond loopback. `/healthz` is always open. |
 | `RLCD_WEEKLY_LIMIT_USD` | unset | if set (e.g. `100`), `weekly.percent_used` is computed |
 | `RLCD_BLOCK_LIMIT_USD` | unset | same for the 5h window |
 | `CCUSAGE_CMD` | `npx -y ccusage@latest` | override if you `npm i -g ccusage` and want `ccusage` directly |

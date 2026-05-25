@@ -41,10 +41,10 @@ Linux PC                                   ESP32-S3-RLCD-4.2
 
 ## Quick start
 
-1. **Bridge** (on the PC that runs Claude Code):
+1. **Bridge** (wherever Claude Code actually runs — laptop, desktop, or VPS):
    ```bash
    cd bridge
-   uv run bridge.py
+   uv run python bridge.py
    curl http://localhost:7777/api/usage | jq
    ```
 2. **Install as a service**:
@@ -52,6 +52,17 @@ Linux PC                                   ESP32-S3-RLCD-4.2
    scripts/install-bridge-linux.sh
    ```
 3. **Firmware** — flash following `firmware/README.md` (requires hardware + ESP-IDF v5.x).
+
+## Deployment models
+
+| Mode | Bind `RLCD_HOST` to | Notes |
+| --- | --- | --- |
+| Bridge on same LAN as the ESP32 | LAN IP (or `0.0.0.0`) | Simplest. Recommended `RLCD_AUTH_TOKEN` even on LAN. |
+| Bridge on a VPS / remote host (Claude Code runs there) | overlay-network IP (Tailscale / ZeroTier) | ESP32 needs the same overlay reachable from home. Typically: home router or an always-on box joins the overlay and advertises the route. **Do not expose the public IP without a token.** |
+| Bridge on dev box for firmware bring-up | `127.0.0.1` | UI work with `?mock=1`, no real data leaves the host. |
+
+Always set `RLCD_AUTH_TOKEN` (random ≥24 bytes) when the bridge listens on
+anything other than loopback. The ESP32 sends it as `X-RLCD-Token`.
 
 ## Hardware
 

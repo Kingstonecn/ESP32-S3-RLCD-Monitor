@@ -16,7 +16,7 @@ static void usage_poll_task(void *arg)
 {
     while (1) {
         usage_report_t rep;
-        esp_err_t err = usage_client_fetch(RLCD_BRIDGE_URL, &rep);
+        esp_err_t err = usage_client_fetch(RLCD_BRIDGE_URL, RLCD_BRIDGE_TOKEN, &rep);
         if (err == ESP_OK) {
             ui_main_update(&rep);
         } else {

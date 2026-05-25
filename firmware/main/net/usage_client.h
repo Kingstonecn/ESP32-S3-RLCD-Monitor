@@ -38,4 +38,5 @@ typedef struct {
     bool           stale;
 } usage_report_t;
 
-esp_err_t usage_client_fetch(const char *url, usage_report_t *out);
+// `token` may be NULL or "" for no auth; otherwise it is sent as X-RLCD-Token.
+esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t *out);

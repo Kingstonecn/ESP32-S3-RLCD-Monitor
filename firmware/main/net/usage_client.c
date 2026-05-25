@@ -46,7 +46,7 @@ static void parse_bucket(cJSON *o, usage_bucket_t *out)
     out->percent_used_x100 = pct_x100(pct);
 }
 
-esp_err_t usage_client_fetch(const char *url, usage_report_t *out)
+esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->active_block.percent_used_x100 = -1;
@@ -62,6 +62,9 @@ esp_err_t usage_client_fetch(const char *url, usage_report_t *out)
         .timeout_ms    = 8000,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (token && token[0]) {
+        esp_http_client_set_header(client, "X-RLCD-Token", token);
+    }
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
     esp_http_client_cleanup(client);

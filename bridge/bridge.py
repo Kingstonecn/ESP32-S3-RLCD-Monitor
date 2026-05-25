@@ -14,7 +14,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from schema import (
@@ -30,6 +30,7 @@ from sources.claude_local import fetch_claude, fetch_other_agents
 
 CACHE_TTL_SEC = int(os.environ.get("RLCD_CACHE_TTL", "60"))
 INCLUDE_OTHERS = os.environ.get("RLCD_INCLUDE_OTHERS", "1") != "0"
+AUTH_TOKEN = os.environ.get("RLCD_AUTH_TOKEN") or None  # blank/unset = no auth
 
 app = FastAPI(title="RLCD bridge", version="0.1.0")
 
@@ -110,8 +111,21 @@ def healthz():
     return {"ok": True, "cache_age_sec": int(time.time() - float(_cache.get("ts", 0.0) or 0))}
 
 
+def _check_auth(token_header: str | None, token_query: str | None) -> None:
+    if AUTH_TOKEN is None:
+        return
+    presented = token_header or token_query
+    if presented != AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid or missing token")
+
+
 @app.get("/api/usage")
-def get_usage(mock: int = Query(0)):
+def get_usage(
+    mock: int = Query(0),
+    token: str | None = Query(None),
+    x_rlcd_token: str | None = Header(None),
+):
+    _check_auth(x_rlcd_token, token)
     if mock:
         return _mock_report().model_dump(mode="json")
     rep, err = _get_cached()

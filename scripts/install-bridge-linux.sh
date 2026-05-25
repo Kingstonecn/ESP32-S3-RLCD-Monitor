@@ -38,7 +38,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$BRIDGE_DIR
-Environment=RLCD_HOST=0.0.0.0
+Environment=RLCD_HOST=127.0.0.1
 Environment=RLCD_PORT=7777
 ExecStart=$UV_BIN run python bridge.py
 Restart=on-failure
