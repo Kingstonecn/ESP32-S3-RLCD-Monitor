@@ -1,0 +1,12 @@
+[Unit]
+Description=RLCD: lower ZeroTier MTU + clamp TCP MSS for the home LAN path
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rlcd-zt-fix.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

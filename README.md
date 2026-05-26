@@ -64,6 +64,19 @@ Linux PC                                   ESP32-S3-RLCD-4.2
 Always set `RLCD_AUTH_TOKEN` (random ≥24 bytes) when the bridge listens on
 anything other than loopback. The ESP32 sends it as `X-RLCD-Token`.
 
+### ZeroTier MTU gotcha
+
+If the bridge is on a VPS reached over ZeroTier and the device sits behind a
+home router, you may see the TCP handshake succeed but the response never
+arrive (`Established ... 0 bytes received`, or the ESP32 logs
+`ESP_ERR_HTTP_CONNECT`). ZeroTier's default 2800-byte MTU is larger than the
+real path to the home LAN (~1400), so large responses get black-holed by
+broken PMTUD. Fix on the VPS with `scripts/vps-zt-mtu-fix.sh` (lowers the zt
+MTU to 1400 and clamps outgoing TCP MSS to 1360); install it as the
+`rlcd-zt-fix.service` boot unit so it survives reboots. The cleanest
+alternative is to set the network MTU to 1400 in ZeroTier Central, which
+propagates to every member.
+
 ## Hardware
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2)
