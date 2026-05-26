@@ -9,9 +9,13 @@
 #include <stdio.h>
 #include <string.h>
 
+// The reflective panel is 1-bit (pure black/white, no grayscale). Anything
+// that isn't solid black gets thresholded to white or breaks up into faint
+// dithered strokes — so every glyph and rule is pure black. Hierarchy comes
+// from font size, not color.
 #define INK   lv_color_black()
 #define WHITE lv_color_white()
-#define GRAY  lv_color_hex(0x707070)
+#define GRAY  lv_color_black()
 
 // dynamic widgets
 static lv_obj_t *lbl_time, *lbl_indoor, *img_wx, *lbl_wx_temp, *lbl_wx_city;
@@ -50,7 +54,7 @@ static void mkdiv(lv_obj_t *p, int x, int y, int w, int h)
     lv_obj_remove_style_all(d);
     lv_obj_set_pos(d, x, y);
     lv_obj_set_size(d, w, h);
-    lv_obj_set_style_bg_color(d, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_set_style_bg_color(d, INK, 0);
     lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
 }
 static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
@@ -60,9 +64,10 @@ static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
     lv_obj_set_size(b, w, 12);
     lv_bar_set_range(b, 0, 100);
     lv_obj_set_style_radius(b, 6, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(0xD0D0D0), LV_PART_MAIN);
-    lv_obj_set_style_border_color(b, GRAY, LV_PART_MAIN);
-    lv_obj_set_style_border_width(b, 1, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b, WHITE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(b, INK, LV_PART_MAIN);
+    lv_obj_set_style_border_width(b, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(b, 6, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(b, INK, LV_PART_INDICATOR);
     lv_bar_set_value(b, 0, LV_ANIM_OFF);
@@ -93,7 +98,7 @@ void ui_app_init(void)
     mkdiv(s, 10, 64, 380, 2);
 
     // ---- vertical split ----
-    mkdiv(s, 200, 74, 1, 210);
+    mkdiv(s, 200, 74, 2, 210);
 
     // ---- left: CLAUDE ----
     mkicon(s, 12, 78, &icon_claudecode);
