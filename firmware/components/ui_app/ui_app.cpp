@@ -64,9 +64,9 @@ void ui_app_update(const usage_report_t *r)
 
     char pct5buf[8] = "  --", pctWbuf[8] = "  --";
     if (r->active_block.percent_used_x100 >= 0)
-        snprintf(pct5buf, sizeof(pct5buf), "%3d%%", r->active_block.percent_used_x100 / 100);
+        snprintf(pct5buf, sizeof(pct5buf), "%3d%%", (int)(r->active_block.percent_used_x100 / 100));
     if (r->weekly.percent_used_x100 >= 0)
-        snprintf(pctWbuf, sizeof(pctWbuf), "%3d%%", r->weekly.percent_used_x100 / 100);
+        snprintf(pctWbuf, sizeof(pctWbuf), "%3d%%", (int)(r->weekly.percent_used_x100 / 100));
 
     snprintf(s_buf, sizeof(s_buf),
         "claude-code @ rlcd ~ $ status%s\n"
