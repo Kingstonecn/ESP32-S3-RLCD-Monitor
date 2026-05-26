@@ -120,6 +120,7 @@ def _mock_report() -> UsageReport:
                 util_5h=0.24, util_7d=0.56, status="ok",
                 reset_5h=now.replace(hour=15, minute=0, second=0, microsecond=0),
                 reset_7d=now.replace(hour=6, minute=0, second=0, microsecond=0),
+                reset_5h_min=99, reset_7d_min=2640,
             ),
         ),
         other=[

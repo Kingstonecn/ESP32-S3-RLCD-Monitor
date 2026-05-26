@@ -38,6 +38,8 @@ class ClaudeLimits(BaseModel):
     util_7d: Optional[float] = None
     reset_5h: Optional[datetime] = None
     reset_7d: Optional[datetime] = None
+    reset_5h_min: Optional[int] = None   # minutes until real 5h reset
+    reset_7d_min: Optional[int] = None
     status: str = "unavailable"   # "ok" | "stale" | "unavailable" | "err:..."
 
 

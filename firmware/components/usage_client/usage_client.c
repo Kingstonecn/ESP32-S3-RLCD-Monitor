@@ -140,8 +140,10 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         const cJSON *u5 = cJSON_GetObjectItemCaseSensitive(lim, "util_5h");
         const cJSON *u7 = cJSON_GetObjectItemCaseSensitive(lim, "util_7d");
         const cJSON *st = cJSON_GetObjectItemCaseSensitive(lim, "status");
+        const cJSON *rm = cJSON_GetObjectItemCaseSensitive(lim, "reset_5h_min");
         if (cJSON_IsNumber(u5)) out->limits.util_5h_x100 = (int32_t)(u5->valuedouble * 100.0 + 0.5);
         if (cJSON_IsNumber(u7)) out->limits.util_7d_x100 = (int32_t)(u7->valuedouble * 100.0 + 0.5);
+        if (cJSON_IsNumber(rm)) out->limits.reset_5h_min = (int32_t) rm->valueint;  // real unified reset
         if (cJSON_IsString(st)) strncpy(out->limits.status, st->valuestring, sizeof(out->limits.status) - 1);
     }
 

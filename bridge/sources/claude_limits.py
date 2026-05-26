@@ -35,10 +35,16 @@ def fetch_limits() -> ClaudeLimits | None:
         v = d.get(key)
         return datetime.fromtimestamp(int(v), tz=timezone.utc) if v else None
 
+    def mins(key: str) -> int | None:
+        v = d.get(key)
+        return max(0, int((int(v) - time.time()) / 60)) if v else None
+
     return ClaudeLimits(
         util_5h=float(u5),
         util_7d=float(u7) if u7 is not None else None,
         reset_5h=ts("reset_5h"),
         reset_7d=ts("reset_7d"),
+        reset_5h_min=mins("reset_5h"),
+        reset_7d_min=mins("reset_7d"),
         status=status,
     )
