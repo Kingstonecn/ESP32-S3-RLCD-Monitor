@@ -130,6 +130,50 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         out->model_count = n;
     }
 
+    // claude.limits — real 5h/7d utilization (0..1 -> x100)
+    out->limits.util_5h_x100 = -1;
+    out->limits.util_7d_x100 = -1;
+    out->limits.reset_5h_min = out->active_block.valid ? out->active_block.minutes_remaining : -1;
+    strncpy(out->limits.status, "n/a", sizeof(out->limits.status) - 1);
+    const cJSON *lim = cJSON_GetObjectItemCaseSensitive(claude, "limits");
+    if (cJSON_IsObject(lim)) {
+        const cJSON *u5 = cJSON_GetObjectItemCaseSensitive(lim, "util_5h");
+        const cJSON *u7 = cJSON_GetObjectItemCaseSensitive(lim, "util_7d");
+        const cJSON *st = cJSON_GetObjectItemCaseSensitive(lim, "status");
+        if (cJSON_IsNumber(u5)) out->limits.util_5h_x100 = (int32_t)(u5->valuedouble * 100.0 + 0.5);
+        if (cJSON_IsNumber(u7)) out->limits.util_7d_x100 = (int32_t)(u7->valuedouble * 100.0 + 0.5);
+        if (cJSON_IsString(st)) strncpy(out->limits.status, st->valuestring, sizeof(out->limits.status) - 1);
+    }
+
+    // weather (top-level)
+    const cJSON *w = cJSON_GetObjectItemCaseSensitive(root, "weather");
+    if (cJSON_IsObject(w)) {
+        const cJSON *t = cJSON_GetObjectItemCaseSensitive(w, "temp_c");
+        const cJSON *cd = cJSON_GetObjectItemCaseSensitive(w, "condition");
+        const cJSON *ic = cJSON_GetObjectItemCaseSensitive(w, "icon");
+        out->weather.temp_c = cJSON_IsNumber(t) ? t->valuedouble : 0.0;
+        if (cJSON_IsString(cd)) strncpy(out->weather.condition, cd->valuestring, sizeof(out->weather.condition) - 1);
+        if (cJSON_IsString(ic)) strncpy(out->weather.icon, ic->valuestring, sizeof(out->weather.icon) - 1);
+        out->weather.valid = cJSON_IsNumber(t);
+    }
+
+    // deepseek (top-level)
+    const cJSON *ds = cJSON_GetObjectItemCaseSensitive(root, "deepseek");
+    if (cJSON_IsObject(ds)) {
+        const cJSON *bal = cJSON_GetObjectItemCaseSensitive(ds, "balance");
+        const cJSON *cur = cJSON_GetObjectItemCaseSensitive(ds, "currency");
+        const cJSON *gr  = cJSON_GetObjectItemCaseSensitive(ds, "granted");
+        const cJSON *tp  = cJSON_GetObjectItemCaseSensitive(ds, "topped");
+        const cJSON *tk  = cJSON_GetObjectItemCaseSensitive(ds, "today_tokens");
+        out->deepseek.balance = cJSON_IsNumber(bal) ? bal->valuedouble : 0.0;
+        out->deepseek.granted = cJSON_IsNumber(gr) ? gr->valuedouble : 0.0;
+        out->deepseek.topped  = cJSON_IsNumber(tp) ? tp->valuedouble : 0.0;
+        out->deepseek.today_tokens = cJSON_IsNumber(tk) ? (int64_t) tk->valuedouble : 0;
+        if (cJSON_IsString(cur)) strncpy(out->deepseek.currency, cur->valuestring, sizeof(out->deepseek.currency) - 1);
+        else strncpy(out->deepseek.currency, "CNY", sizeof(out->deepseek.currency) - 1);
+        out->deepseek.valid = cJSON_IsNumber(bal);
+    }
+
     cJSON_Delete(root);
     return ESP_OK;
 }

@@ -31,6 +31,30 @@ typedef struct {
 #define USAGE_MAX_MODELS 5
 
 typedef struct {
+    int32_t util_5h_x100;   // 0..100, -1 unknown
+    int32_t util_7d_x100;   // 0..100, -1 unknown
+    int32_t reset_5h_min;   // minutes until 5h reset, -1 unknown
+    char    status[12];     // "ok"/"stale"/...
+} usage_limits_t;
+
+typedef struct {
+    double  temp_c;
+    int32_t code;
+    char    condition[16];
+    char    icon[10];       // clear/partly/cloud/rain/snow/fog
+    bool    valid;
+} usage_weather_t;
+
+typedef struct {
+    double  balance;
+    char    currency[8];
+    double  granted;
+    double  topped;
+    int64_t today_tokens;
+    bool    valid;
+} usage_deepseek_t;
+
+typedef struct {
     char                  updated_at[32];      // RFC3339
     usage_active_block_t  active_block;
     usage_bucket_t        weekly;
@@ -39,6 +63,9 @@ typedef struct {
     usage_bucket_t        lifetime;
     usage_model_t         models[USAGE_MAX_MODELS];
     int                   model_count;
+    usage_limits_t        limits;
+    usage_weather_t       weather;
+    usage_deepseek_t      deepseek;
     bool                  stale;
 } usage_report_t;
 

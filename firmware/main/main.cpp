@@ -33,15 +33,14 @@ extern "C" void app_main(void)
 {
     nvs_flash_init();
 
-    UserApp_AppInit(RLCD_WIFI_SSID, RLCD_WIFI_PASSWORD);
-
+    // Bring up the display + UI first so placeholders show during WiFi connect.
     RlcdPort.RLCD_Init();
     Lvgl_PortInit(LCD_WIDTH, LCD_HEIGHT, Lvgl_FlushCallback);
-
     if (Lvgl_lock(-1)) {
         UserApp_UiInit();
         Lvgl_unlock();
     }
 
+    UserApp_AppInit(RLCD_WIFI_SSID, RLCD_WIFI_PASSWORD);  // wifi (blocking) + ntp + shtc3
     UserApp_TaskInit(RLCD_BRIDGE_URL, RLCD_BRIDGE_TOKEN, RLCD_POLL_SEC);
 }
