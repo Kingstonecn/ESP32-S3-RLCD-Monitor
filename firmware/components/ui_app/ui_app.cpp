@@ -20,8 +20,8 @@
 // dynamic widgets
 static lv_obj_t *lbl_time, *lbl_indoor, *img_wx, *lbl_wx_temp, *lbl_wx_city;
 static lv_obj_t *bar_5h, *bar_7d, *lbl_5h_pct, *lbl_7d_pct, *lbl_reset;
-static lv_obj_t *lbl_c_today, *lbl_c_month, *lbl_c_total;
-static lv_obj_t *lbl_ds_bal, *lbl_ds_granted, *lbl_ds_topped, *lbl_ds_today;
+static lv_obj_t *c_tok[3], *c_cost[3];     // today/month/total: tokens + cost cols
+static lv_obj_t *lbl_ds_bal, *ds_val[3];   // granted/topped/today values (right-aligned)
 static bool have_data;
 
 static void fmt_tok(char *o, size_t n, int64_t t)
@@ -73,6 +73,19 @@ static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
     lv_bar_set_value(b, 0, LV_ANIM_OFF);
     return b;
 }
+// right-aligned label: text flows to a fixed right edge
+static lv_obj_t *mkright(lv_obj_t *p, int right_x, int y, int w, const lv_font_t *f, const char *t)
+{
+    lv_obj_t *l = lv_label_create(p);
+    lv_obj_set_style_text_font(l, f, 0);
+    lv_obj_set_style_text_color(l, INK, 0);
+    lv_obj_set_width(l, w);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(l, right_x - w, y);
+    lv_label_set_text(l, t);
+    return l;
+}
+
 static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
 {
     lv_obj_t *im = lv_image_create(p);
@@ -111,9 +124,13 @@ void ui_app_init(void)
     lbl_7d_pct = mklabel(s, 146, 122, &lv_font_montserrat_14, INK, "--%");
     lbl_reset  = mklabel(s, 12, 146, &lv_font_montserrat_14, GRAY, "reset --");
     mkdiv(s, 12, 168, 178, 1);
-    lbl_c_today = mklabel(s, 12, 176, &lv_font_montserrat_14, INK, "today");
-    lbl_c_month = mklabel(s, 12, 200, &lv_font_montserrat_14, INK, "month");
-    lbl_c_total = mklabel(s, 12, 224, &lv_font_montserrat_14, INK, "total");
+    const char *crows[3] = {"today", "month", "total"};
+    for (int i = 0; i < 3; ++i) {
+        int y = 176 + i * 24;
+        mklabel(s, 12, y, &lv_font_montserrat_14, INK, crows[i]);
+        c_tok[i]  = mkright(s, 124, y, 64, &lv_font_montserrat_14, "-");   // tokens col
+        c_cost[i] = mkright(s, 192, y, 62, &lv_font_montserrat_14, "-");   // cost col
+    }
 
     // ---- right: DEEPSEEK ----
     mkicon(s, 212, 78, &icon_deepseek);
@@ -121,9 +138,12 @@ void ui_app_init(void)
     mklabel(s, 212, 102, &lv_font_montserrat_14, GRAY, "balance CNY");
     lbl_ds_bal = mklabel(s, 212, 118, &lv_font_montserrat_28, INK, "--");
     mkdiv(s, 212, 168, 178, 1);
-    lbl_ds_granted = mklabel(s, 212, 176, &lv_font_montserrat_14, INK, "granted");
-    lbl_ds_topped  = mklabel(s, 212, 200, &lv_font_montserrat_14, INK, "topped");
-    lbl_ds_today   = mklabel(s, 212, 224, &lv_font_montserrat_14, INK, "today");
+    const char *drows[3] = {"granted", "topped", "today"};
+    for (int i = 0; i < 3; ++i) {
+        int y = 176 + i * 24;
+        mklabel(s, 212, y, &lv_font_montserrat_14, INK, drows[i]);
+        ds_val[i] = mkright(s, 388, y, 120, &lv_font_montserrat_14, "-");
+    }
     have_data = false;
 }
 
@@ -135,15 +155,6 @@ static const lv_image_dsc_t *wx_icon(const char *key)
     if (!strcmp(key, "snow"))   return &icon_wx_snow;
     if (!strcmp(key, "fog"))    return &icon_wx_fog;
     return &icon_wx_cloud;
-}
-
-// right-aligned 2-column row: "label .... value"
-static void set_row(lv_obj_t *lbl, const char *name, const char *col1, const char *col2)
-{
-    char buf[48];
-    if (col2) snprintf(buf, sizeof(buf), "%-6s%6s %7s", name, col1, col2);
-    else      snprintf(buf, sizeof(buf), "%-8s%9s", name, col1);
-    lv_label_set_text(lbl, buf);
 }
 
 void ui_app_update(const usage_report_t *r)
@@ -161,20 +172,20 @@ void ui_app_update(const usage_report_t *r)
       else        snprintf(b, sizeof(b), "reset --");
       lv_label_set_text(lbl_reset, b); }
 
-    fmt_tok(tk, sizeof(tk), r->today.tokens_used); fmt_cost(ct, sizeof(ct), r->today.cost_usd);
-    set_row(lbl_c_today, "today", tk, ct);
-    fmt_tok(tk, sizeof(tk), r->month.tokens_used); fmt_cost(ct, sizeof(ct), r->month.cost_usd);
-    set_row(lbl_c_month, "month", tk, ct);
-    fmt_tok(tk, sizeof(tk), r->lifetime.tokens_used); fmt_cost(ct, sizeof(ct), r->lifetime.cost_usd);
-    set_row(lbl_c_total, "total", tk, ct);
+    const usage_bucket_t *cb[3] = { &r->today, &r->month, &r->lifetime };
+    for (int i = 0; i < 3; ++i) {
+        fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);  lv_label_set_text(c_tok[i], tk);
+        fmt_cost(ct, sizeof(ct), cb[i]->cost_usd);    lv_label_set_text(c_cost[i], ct);
+    }
 
     // deepseek
     if (r->deepseek.valid) {
-        char b[24]; snprintf(b, sizeof(b), "%.2f", r->deepseek.balance); lv_label_set_text(lbl_ds_bal, b);
-        char g[16]; snprintf(g, sizeof(g), "%.2f", r->deepseek.granted); set_row(lbl_ds_granted, "granted", g, NULL);
-        char t[16]; snprintf(t, sizeof(t), "%.2f", r->deepseek.topped);  set_row(lbl_ds_topped, "topped", t, NULL);
-        fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens); strncat(tk, " tok", sizeof(tk) - strlen(tk) - 1);
-        set_row(lbl_ds_today, "today", tk, NULL);
+        char b[24];
+        snprintf(b, sizeof(b), "%.2f", r->deepseek.balance);  lv_label_set_text(lbl_ds_bal, b);
+        snprintf(b, sizeof(b), "%.2f", r->deepseek.granted);  lv_label_set_text(ds_val[0], b);
+        snprintf(b, sizeof(b), "%.2f", r->deepseek.topped);   lv_label_set_text(ds_val[1], b);
+        fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
+        strncat(tk, " tok", sizeof(tk) - strlen(tk) - 1);     lv_label_set_text(ds_val[2], tk);
     }
 
     // weather (from bridge)
@@ -182,6 +193,8 @@ void ui_app_update(const usage_report_t *r)
         lv_image_set_src(img_wx, wx_icon(r->weather.icon));
         char b[16]; snprintf(b, sizeof(b), "%.0f\xC2\xB0""C", r->weather.temp_c);
         lv_label_set_text(lbl_wx_temp, b);
+        char c[24]; snprintf(c, sizeof(c), "SHENZHEN  %s", r->weather.condition);
+        lv_label_set_text(lbl_wx_city, c);
     }
 }
 
