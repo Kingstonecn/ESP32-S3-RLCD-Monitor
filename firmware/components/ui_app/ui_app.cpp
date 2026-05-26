@@ -32,11 +32,13 @@ static void fmt_tok(char *o, size_t n, int64_t t)
     else if (t >= 1000LL)       snprintf(o, n, "%.0fk", t / 1e3);
     else                        snprintf(o, n, "%lld", (long long) t);
 }
-// design rule: < $1000 -> 2 decimals; >= $1000 -> "$X.Xk"
+// keep amounts short so they never overflow the column:
+//   < $100  -> 2 decimals ($98.42)   $100-999 -> integer ($182)   >= $1000 -> "$X.Xk"
 static void fmt_cost(char *o, size_t n, double c)
 {
-    if (c < 1000) snprintf(o, n, "$%.2f", c);
-    else          snprintf(o, n, "$%.1fk", c / 1000.0);
+    if      (c < 100)  snprintf(o, n, "$%.2f", c);
+    else if (c < 1000) snprintf(o, n, "$%.0f", c);
+    else               snprintf(o, n, "$%.1fk", c / 1000.0);
 }
 
 static lv_obj_t *mklabel(lv_obj_t *p, int x, int y, const lv_font_t *f, const char *t)
@@ -56,6 +58,7 @@ static lv_obj_t *mkalign(lv_obj_t *p, int left_x, int y, int w, lv_text_align_t 
     lv_obj_set_style_text_color(l, INK, 0);
     lv_obj_set_width(l, w);
     lv_obj_set_style_text_align(l, a, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);  // never wrap a fixed column
     lv_obj_set_pos(l, left_x, y);
     lv_label_set_text(l, t);
     return l;
@@ -133,8 +136,8 @@ void ui_app_init(void)
     // ---- right: DEEPSEEK ----
     mkicon(s, 210, 72, &icon_deepseek);
     mklabel(s, 250, 76, &lv_font_montserrat_20, "DEEPSEEK");
-    mkalign(s, 212, 110, 176, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "balance");
-    lbl_ds_bal = mkalign(s, 212, 126, 176, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
+    mkalign(s, 212, 104, 176, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "balance");
+    lbl_ds_bal = mkalign(s, 212, 132, 176, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
     mkdiv(s, 212, 184, 178, 1);
     const char *drows[3] = {"granted", "topped", "today"};
     for (int i = 0; i < 3; ++i) {
