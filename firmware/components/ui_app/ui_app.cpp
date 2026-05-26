@@ -62,7 +62,7 @@ void ui_app_update(const usage_report_t *r)
     fmt_bar(bar5h, sizeof(bar5h), r->active_block.percent_used_x100);
     fmt_bar(barWk, sizeof(barWk), r->weekly.percent_used_x100);
 
-    char pct5buf[8] = "  --", pctWbuf[8] = "  --";
+    char pct5buf[16] = "  --", pctWbuf[16] = "  --";
     if (r->active_block.percent_used_x100 >= 0)
         snprintf(pct5buf, sizeof(pct5buf), "%3d%%", (int)(r->active_block.percent_used_x100 / 100));
     if (r->weekly.percent_used_x100 >= 0)
