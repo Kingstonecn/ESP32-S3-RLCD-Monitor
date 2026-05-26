@@ -40,8 +40,8 @@ def weather_alpha(kind, size):
     return im.resize((size,size),Image.LANCZOS)
 
 ICONS={}
-ICONS["claudecode"]=svg_alpha("docs/assets/claudecode.svg",22)
-ICONS["deepseek"]=svg_alpha("docs/assets/deepseek.svg",22)
+ICONS["claudecode"]=svg_alpha("docs/assets/claudecode.svg",34)
+ICONS["deepseek"]=svg_alpha("docs/assets/deepseek.svg",34)
 for k in ("clear","partly","cloud","rain","snow","fog"):
     ICONS["wx_"+k]=weather_alpha(k,26)
 
