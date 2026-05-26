@@ -193,7 +193,7 @@ void ui_app_update(const usage_report_t *r)
         lv_image_set_src(img_wx, wx_icon(r->weather.icon));
         char b[16]; snprintf(b, sizeof(b), "%.0f\xC2\xB0""C", r->weather.temp_c);
         lv_label_set_text(lbl_wx_temp, b);
-        char c[24]; snprintf(c, sizeof(c), "SHENZHEN  %s", r->weather.condition);
+        char c[32]; snprintf(c, sizeof(c), "SHENZHEN  %s", r->weather.condition);
         lv_label_set_text(lbl_wx_city, c);
     }
 }
