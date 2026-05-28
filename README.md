@@ -4,7 +4,7 @@
 
 A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
 
-![device photo](rlcd_mockup.png?raw=true)
+![device photo](device_photo.png)
 
 ## How it works
 
