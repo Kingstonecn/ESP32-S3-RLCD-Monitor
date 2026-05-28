@@ -35,21 +35,21 @@ _cache: dict[str, object] = {"w": None, "ts": 0.0}
 
 
 def _condition(code: int, cloud_cover: float, precip: float) -> tuple[str, str]:
-    """Refine WMO code with cloud_cover (%) and precipitation (mm) for better accuracy."""
-    # Precipitation beats cloud cover
+    """Derive condition from observed cloud_cover + precipitation; WMO code is tie-breaker only."""
+    # Fog is reliably coded and has no precip signal
+    if code in (45, 48):
+        return "Fog", "fog"
+    # Snow: trust WMO code regardless of precip amount (snowfall ≠ liquid precip)
+    if code in (71, 73, 75, 77, 85, 86):
+        return "Snow", "snow"
+    # Rain/storm: only trust when there is measurable precipitation
+    if precip >= 2.0:
+        return "Heavy", "rain"
     if precip >= 0.3:
-        if code in (71, 73, 75, 77, 85, 86):
-            return "Snow", "snow"
-        if precip >= 2.0 or code in (65, 82):
-            return "Heavy", "rain"
         return "Rain", "rain"
     if precip > 0:
         return "Drizzle", "rain"
-    # No precip: use cloud cover for clearer sky states
-    if code in (45, 48):
-        return "Fog", "fog"
-    if code in (95, 96, 99):
-        return "Storm", "rain"
+    # No measurable precip → sky state from cloud_cover (ignores WMO rain/storm codes)
     if cloud_cover < 20:
         return "Clear", "clear"
     if cloud_cover < 50:
