@@ -4,6 +4,28 @@
 
 把你的 Claude（Pro/Max + API）和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
 
+![实物效果图](rlcd_mockup.png)
+
+## 实现逻辑
+
+```
+~/.claude/**/*.jsonl   （Claude Code 会话日志，本地写入）
+         │
+         ▼
+   bridge 守护进程                            ESP32-S3-RLCD-4.2
+   ──────────────                            ─────────────────
+   • 调用 ccusage 解析会话日志               • 开机连接 Wi-Fi
+   • 从 Anthropic API 响应头获取             • 每 60 秒 GET /api/usage
+     真实的 5h/7d 窗口用量                   • 用 cJSON 解析 JSON
+   • 获取 DeepSeek 账户余额                  • LVGL 双栏 UI：
+   • 获取室外天气（open-meteo，免 key）          左栏 → Claude 用量 + 进度条
+   • 缓存结果，在 :7777 提供 JSON 服务          右栏 → DeepSeek 余额
+                                             • 读取室内温湿度（SHTC3）
+                                             • NTP 对时（CST-8）显示时间
+```
+
+bridge 以 systemd `--user` 服务形式运行在与 Claude Code 同一台机器上。后台线程每 45 秒刷新一次 ccusage，使 ESP32 的 HTTP 请求始终从缓存秒返（ccusage 冷启动约需 10 秒）。真实的 5h/7d 用量由另一个 root systemd timer 每 3 分钟探测一次 Anthropic API，将结果写入共享 JSON 文件，bridge 读取该文件。
+
 ```
 14:30                            ☁  24°C
 IN 26.3°C  65%RH         SHENZHEN  Partly

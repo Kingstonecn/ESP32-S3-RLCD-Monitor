@@ -4,6 +4,33 @@
 
 A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
 
+![device photo](rlcd_mockup.png)
+
+## How it works
+
+```
+~/.claude/**/*.jsonl   (Claude Code session logs, written locally)
+         │
+         ▼
+   bridge daemon                              ESP32-S3-RLCD-4.2
+   ─────────────                              ─────────────────
+   • runs ccusage to parse session logs       • connects to WiFi on boot
+   • fetches real 5h/7d window limits         • polls GET /api/usage every 60 s
+     from Anthropic API headers               • parses JSON with cJSON
+   • fetches DeepSeek account balance         • drives LVGL two-column UI:
+   • fetches outdoor weather (open-meteo)       left  → Claude stats + bars
+   • caches result, serves JSON on :7777        right → DeepSeek balance
+                                              • reads indoor temp/RH (SHTC3)
+                                              • shows time via NTP (CST-8)
+```
+
+The bridge runs as a systemd `--user` service on the same machine as Claude
+Code. It keeps a background thread that refreshes ccusage every 45 s so the
+ESP32's HTTP request always returns instantly from cache (a cold ccusage run
+takes ~10 s). Real-time 5h/7d utilization comes from a separate root systemd
+timer that probes the Anthropic API every 3 min and writes the result to a
+shared JSON file the bridge reads.
+
 ```
 14:30                            ☁  24°C
 IN 26.3°C  65%RH         SHENZHEN  Partly
