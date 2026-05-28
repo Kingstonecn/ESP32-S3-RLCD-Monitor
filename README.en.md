@@ -48,6 +48,7 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 ## Hardware
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2" reflective LCD (paper-like), ESP32-S3, WiFi, RTC, temp/humidity, SD, audio.
+  - Buy in China: [Tmall listing](https://detail.tmall.com/item.htm?id=1010403328696)
 - USB-C cable for flashing.
 
 ## Architecture

@@ -43,6 +43,7 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
 ## 硬件
 
 - [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2 英寸反射式 LCD（类纸面），ESP32-S3，Wi-Fi，RTC，温湿度，SD，音频。
+  - 国内购买：[天猫链接](https://detail.tmall.com/item.htm?id=1010403328696)
 - USB-C 数据线（用于烧录）。
 
 ## 架构
