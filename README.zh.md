@@ -5,20 +5,17 @@
 把你的 Claude（Pro/Max + API）和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
 
 ```
-claude-code @ rlcd ~ $ status        14:30
+14:30                            ☁  24°C
+IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
-5h window  [██████░░░░] 62%
-  162,438 tokens · $4.21
-  reset in 2h 14m
-
-weekly     [████░░░░░░] 41%
-
-today     382k tok    $9.14
-month    8.4M tok   $187.22
-total   18.2M tok   $214.07
-
-──────────────────────────────────────────
-models: opus 71% · sonnet 24% · haiku 5%
+ CLAUDE           │  DEEPSEEK
+ 5h [████░░] 62%  │
+ 7d [████░░] 41%  │      balance
+ reset in 2h14m   │    ¥ 70.79
+ ─────────────────│──────────────────────
+ today   162k  $4.21│ granted      0.00
+ month   8.4M   $187│ topped      70.79
+ total  18.2M   $214│ today    2.4M tok
 ```
 
 ## 硬件
@@ -40,7 +37,7 @@ Linux / macOS 主机                        ESP32-S3-RLCD-4.2
 ```
 
 - **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。
-- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染等宽终端风格的仪表盘。
+- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘。
 
 ---
 
@@ -178,11 +175,9 @@ idf.py build flash monitor
 |------|------|------|
 | `RLCD_WIFI_SSID` | `"MyNetwork"` | 仅支持 2.4 GHz（ESP32 不支持 5 GHz） |
 | `RLCD_WIFI_PASSWORD` | `"password"` | WPA2 |
-| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | bridge 主机的局域网 IP |
+| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | bridge 地址，见下方部署模式 |
 | `RLCD_BRIDGE_TOKEN` | `""` | 与 `RLCD_AUTH_TOKEN` 保持一致，未设置则留空 |
 | `RLCD_POLL_SEC` | `60` | 轮询间隔（秒） |
-
-使用覆盖网络（Tailscale / ZeroTier）时，填写 bridge 主机的 overlay IP，例如 Tailscale 的 `http://100.x.x.x:7777/api/usage` 或 ZeroTier 的 `http://10.x.x.x:7777/api/usage`。
 
 首次编译会通过 IDF 组件管理器下载 `lvgl/lvgl@^9.4.0`（约 50 MB），需要联网。
 
@@ -195,20 +190,93 @@ idf.py build flash monitor
 
 ---
 
-## 部署模式对比
+## 部署模式
 
-| 场景 | `RLCD_HOST` | 说明 |
-|------|-------------|------|
-| bridge 与 ESP32 在同一局域网 | `0.0.0.0` 或局域网 IP | 最简单，记得设 `RLCD_AUTH_TOKEN` |
-| bridge 在 VPS / 远程主机 | overlay 网络 IP（Tailscale / ZeroTier） | ESP32 需能访问同一 overlay，通常通过家用路由器或常开设备接入。**不设 token 绝对不要暴露公网。** |
-| 仅调试固件 UI | `127.0.0.1` | 使用 `?mock=1`，数据不出本机 |
+### 模式 A — 同局域网（最简单）
 
-### ZeroTier MTU 问题
+bridge 和 ESP32 在同一个家庭/办公室网络中。
 
-若 bridge 部署在通过 ZeroTier 连接的 VPS 上，TCP 握手成功但响应始终收不到，原因是 ZeroTier 默认 MTU 2800 字节大于实际路径 MTU（约 1400 字节）。在 VPS 上修复：
+```ini
+# bridge/.env
+RLCD_HOST=0.0.0.0
+RLCD_AUTH_TOKEN=<随机32字节>
+```
+
+```c
+// secrets.h
+#define RLCD_BRIDGE_URL   "http://192.168.1.42:7777/api/usage"
+#define RLCD_BRIDGE_TOKEN "<相同token>"
+```
+
+### 模式 B — 公网直连（bridge 在 VPS 上）
+
+将 bridge 直接暴露在 VPS 的公网 IP 上，ESP32 通过公网连接。由于流量经过公网，强 token 和防火墙规则必不可少。
+
+```ini
+# VPS 上的 bridge/.env
+RLCD_HOST=0.0.0.0
+RLCD_AUTH_TOKEN=<随机32字节>
+```
+
+```c
+// secrets.h
+#define RLCD_BRIDGE_URL   "http://203.0.113.10:7777/api/usage"
+#define RLCD_BRIDGE_TOKEN "<相同token>"
+```
+
+防火墙：仅在需要时开放 7777 端口，或限制来源 IP 为家庭宽带的 IP 段。
+
+#### 进阶：用反向代理套 HTTPS（nginx）
+
+更安全的方案是在 nginx 后面运行 bridge，配合 Let's Encrypt 证书做 TLS 终止。这样无需开放 7777 端口，统一走 443。
+
+```nginx
+# /etc/nginx/sites-available/rlcd
+server {
+    listen 443 ssl;
+    server_name rlcd.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/rlcd.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rlcd.example.com/privkey.pem;
+
+    location /api/usage {
+        proxy_pass http://127.0.0.1:7777;
+        proxy_set_header X-RLCD-Token $http_x_rlcd_token;
+    }
+    location /healthz {
+        proxy_pass http://127.0.0.1:7777;
+    }
+}
+```
+
+```c
+// secrets.h — 注意 https://
+#define RLCD_BRIDGE_URL   "https://rlcd.example.com/api/usage"
+```
+
+> ESP32 HTTP 客户端支持 HTTPS，但需要将服务器 CA 证书内嵌到固件中。使用 Let's Encrypt 证书时，将 ISRG Root X1 的 PEM 内嵌到 `usage_client.c` 并通过 `esp_http_client_config_t.cert_pem` 传入。
+
+### 模式 C — overlay 网络（ZeroTier / Tailscale）
+
+ESP32 需要能访问与 bridge 相同的 overlay 网络——通常通过家用路由器或常开设备（树莓派、NAS）接入 overlay 并路由流量到家庭局域网。
+
+```c
+// secrets.h — Tailscale
+#define RLCD_BRIDGE_URL   "http://100.x.x.x:7777/api/usage"
+
+// secrets.h — ZeroTier
+#define RLCD_BRIDGE_URL   "http://10.x.x.x:7777/api/usage"
+```
+
+#### ZeroTier MTU 问题
+
+若 TCP 握手成功但响应始终收不到，原因是 ZeroTier 默认 MTU 2800 字节大于实际路径 MTU（约 1400 字节）。在 VPS 上修复：
 
 ```bash
-scripts/vps-zt-mtu-fix.sh
+# 先查你的 ZeroTier 接口名：
+ip link show | grep zt
+
+sudo scripts/vps-zt-mtu-fix.sh <zt-接口名>
 sudo cp scripts/rlcd-zt-fix.service /etc/systemd/system/
 sudo systemctl enable --now rlcd-zt-fix.service   # 开机自动生效
 ```

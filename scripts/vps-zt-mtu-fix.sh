@@ -14,7 +14,9 @@
 #
 # Usage (manual): sudo ./vps-zt-mtu-fix.sh [zt-interface]
 set -e
-IFACE="${1:-ztXXXXXXXX}"
+# Find your ZeroTier interface name with: ip link show | grep zt
+# Then run: sudo ./vps-zt-mtu-fix.sh <zt-interface>
+IFACE="${1:?usage: $0 <zt-interface-name>}"
 MSS=1360
 for _ in $(seq 1 60); do
     ip link show "$IFACE" >/dev/null 2>&1 && break

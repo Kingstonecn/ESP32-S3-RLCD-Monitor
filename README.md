@@ -5,20 +5,17 @@
 A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
 
 ```
-claude-code @ rlcd ~ $ status        14:30
+14:30                            ☁  24°C
+IN 26.3°C  65%RH         SHENZHEN  Partly
 ──────────────────────────────────────────
-5h window  [██████░░░░] 62%
-  162,438 tokens · $4.21
-  reset in 2h 14m
-
-weekly     [████░░░░░░] 41%
-
-today     382k tok    $9.14
-month    8.4M tok   $187.22
-total   18.2M tok   $214.07
-
-──────────────────────────────────────────
-models: opus 71% · sonnet 24% · haiku 5%
+ CLAUDE           │  DEEPSEEK
+ 5h [████░░] 62%  │
+ 7d [████░░] 41%  │      balance
+ reset in 2h14m   │    ¥ 70.79
+ ─────────────────│──────────────────────
+ today   162k  $4.21│ granted      0.00
+ month   8.4M   $187│ topped      70.79
+ total  18.2M   $214│ today    2.4M tok
 ```
 
 ## Hardware
@@ -40,7 +37,7 @@ Linux / macOS PC                          ESP32-S3-RLCD-4.2
 ```
 
 - **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`.
-- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a monospace dashboard on the RLCD.
+- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD.
 
 ---
 
@@ -184,16 +181,11 @@ idf.py build flash monitor
 |-----|---------|-------|
 | `RLCD_WIFI_SSID` | `"MyNetwork"` | 2.4 GHz only (ESP32 does not support 5 GHz) |
 | `RLCD_WIFI_PASSWORD` | `"password"` | WPA2 |
-| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | LAN IP of bridge host |
-| `RLCD_BRIDGE_TOKEN` | `""` | Match `RLCD_AUTH_TOKEN` if set, else leave empty |
-| `RLCD_POLL_SEC` | `60` | Poll interval in seconds |
+| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | bridge host address — see deployment modes below |
+| `RLCD_BRIDGE_TOKEN` | `""` | match `RLCD_AUTH_TOKEN` if set, else leave empty |
+| `RLCD_POLL_SEC` | `60` | poll interval in seconds |
 
-For overlay-network deployments (Tailscale / ZeroTier), use the overlay IP of
-the bridge host (e.g. `http://100.x.x.x:7777/api/usage` for Tailscale,
-`http://10.x.x.x:7777/api/usage` for ZeroTier).
-
-The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager
-(~50 MB) — needs internet.
+The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager (~50 MB) — needs internet.
 
 ### Step 6 — Verify
 
@@ -204,24 +196,104 @@ The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager
 
 ---
 
-## Deployment models
+## Deployment modes
 
-| Scenario | `RLCD_HOST` | Notes |
-|----------|-------------|-------|
-| Bridge on same LAN as ESP32 | `0.0.0.0` or LAN IP | Simplest. Set `RLCD_AUTH_TOKEN`. |
-| Bridge on VPS / remote host | Overlay-network IP (Tailscale / ZeroTier) | ESP32 needs the same overlay reachable from home. **Never expose without a token.** |
-| Firmware bring-up only | `127.0.0.1` | Use `?mock=1`; no data leaves the host. |
+### Mode A — Same LAN (simplest)
 
-### ZeroTier MTU note
+Bridge and ESP32 are on the same home/office network.
 
-If the bridge is on a VPS over ZeroTier and responses never arrive despite the
-TCP handshake succeeding, ZeroTier's default 2800-byte MTU exceeds your real
-path MTU (~1400 bytes). Fix on the VPS:
+```ini
+# bridge/.env
+RLCD_HOST=0.0.0.0
+RLCD_AUTH_TOKEN=<random-32-bytes>
+```
+
+```c
+// secrets.h
+#define RLCD_BRIDGE_URL   "http://192.168.1.42:7777/api/usage"
+#define RLCD_BRIDGE_TOKEN "<same-token>"
+```
+
+### Mode B — Public internet (bridge on a VPS)
+
+Expose the bridge directly on the VPS's public IP. The ESP32 connects over the
+open internet, so a strong token and firewall rules are essential.
+
+```ini
+# bridge/.env on VPS
+RLCD_HOST=0.0.0.0          # or bind to a specific public interface
+RLCD_AUTH_TOKEN=<random-32-bytes>
+```
+
+```c
+// secrets.h
+#define RLCD_BRIDGE_URL   "http://203.0.113.10:7777/api/usage"
+#define RLCD_BRIDGE_TOKEN "<same-token>"
+```
+
+Firewall: open port 7777 only while you need it, or restrict source IP to your
+home ISP's address range.
+
+#### Optional: HTTPS via reverse proxy (nginx)
+
+For a more secure setup, put the bridge behind nginx with a TLS certificate
+(e.g. from Let's Encrypt via Certbot). This removes the need to open port 7777
+and lets you terminate TLS on port 443.
+
+```nginx
+# /etc/nginx/sites-available/rlcd
+server {
+    listen 443 ssl;
+    server_name rlcd.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/rlcd.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rlcd.example.com/privkey.pem;
+
+    location /api/usage {
+        proxy_pass http://127.0.0.1:7777;
+        proxy_set_header X-RLCD-Token $http_x_rlcd_token;
+    }
+    location /healthz {
+        proxy_pass http://127.0.0.1:7777;
+    }
+}
+```
+
+```c
+// secrets.h — note https://
+#define RLCD_BRIDGE_URL   "https://rlcd.example.com/api/usage"
+```
+
+> The ESP32 HTTP client supports HTTPS but requires the server CA certificate
+> embedded in the firmware. For a Let's Encrypt cert, embed the ISRG Root X1
+> PEM in `usage_client.c` and pass it via `esp_http_client_config_t.cert_pem`.
+
+### Mode C — Overlay network (ZeroTier / Tailscale)
+
+The ESP32 must be reachable on the same overlay as the bridge — typically via a
+home router or always-on device (Raspberry Pi, NAS) that joins the overlay and
+routes traffic to the home LAN.
+
+```c
+// secrets.h — Tailscale
+#define RLCD_BRIDGE_URL   "http://100.x.x.x:7777/api/usage"
+
+// secrets.h — ZeroTier
+#define RLCD_BRIDGE_URL   "http://10.x.x.x:7777/api/usage"
+```
+
+#### ZeroTier MTU fix
+
+If the TCP handshake succeeds but responses never arrive, ZeroTier's default
+2800-byte MTU is larger than the real path MTU (~1400 bytes). Fix on the VPS:
 
 ```bash
-scripts/vps-zt-mtu-fix.sh
+# Find your ZeroTier interface name first:
+ip link show | grep zt
+
+sudo scripts/vps-zt-mtu-fix.sh <zt-interface>
 sudo cp scripts/rlcd-zt-fix.service /etc/systemd/system/
-sudo systemctl enable --now rlcd-zt-fix.service
+sudo systemctl enable --now rlcd-zt-fix.service   # persists across reboots
 ```
 
 The cleanest alternative is to set the ZeroTier network MTU to 1400 in ZeroTier Central.
