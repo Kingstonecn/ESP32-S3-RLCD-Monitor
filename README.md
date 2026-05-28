@@ -1,35 +1,30 @@
 # token-monitor-RLCD
 
-[中文文档](README.zh.md)
+[English](README.en.md)
 
-A desktop ornament that shows your live Claude (Pro/Max + API) and DeepSeek usage on a Waveshare ESP32-S3-RLCD-4.2 reflective-LCD board.
+把你的 Claude（Pro/Max + API）和 DeepSeek 实时用量显示在 Waveshare ESP32-S3-RLCD-4.2 反射式 LCD 上的桌面摆件。
 
-![device photo](device_photo.png)
+![实物效果图](device_photo.png)
 
-## How it works
+## 实现逻辑
 
 ```
-~/.claude/**/*.jsonl   (Claude Code session logs, written locally)
+~/.claude/**/*.jsonl   （Claude Code 会话日志，本地写入）
          │
          ▼
-   bridge daemon                              ESP32-S3-RLCD-4.2
-   ─────────────                              ─────────────────
-   • runs ccusage to parse session logs       • connects to WiFi on boot
-   • fetches real 5h/7d window limits         • polls GET /api/usage every 60 s
-     from Anthropic API headers               • parses JSON with cJSON
-   • fetches DeepSeek account balance         • drives LVGL two-column UI:
-   • fetches outdoor weather (open-meteo)       left  → Claude stats + bars
-   • caches result, serves JSON on :7777        right → DeepSeek balance
-                                              • reads indoor temp/RH (SHTC3)
-                                              • shows time via NTP (CST-8)
+   bridge 守护进程                            ESP32-S3-RLCD-4.2
+   ──────────────                            ─────────────────
+   • 调用 ccusage 解析会话日志               • 开机连接 Wi-Fi
+   • 从 Anthropic API 响应头获取             • 每 60 秒 GET /api/usage
+     真实的 5h/7d 窗口用量                   • 用 cJSON 解析 JSON
+   • 获取 DeepSeek 账户余额                  • LVGL 双栏 UI：
+   • 获取室外天气（open-meteo，免 key）          左栏 → Claude 用量 + 进度条
+   • 缓存结果，在 :7777 提供 JSON 服务          右栏 → DeepSeek 余额
+                                             • 读取室内温湿度（SHTC3）
+                                             • NTP 对时（CST-8）显示时间
 ```
 
-The bridge runs as a systemd `--user` service on the same machine as Claude
-Code. It keeps a background thread that refreshes ccusage every 45 s so the
-ESP32's HTTP request always returns instantly from cache (a cold ccusage run
-takes ~10 s). Real-time 5h/7d utilization comes from a separate root systemd
-timer that probes the Anthropic API every 3 min and writes the result to a
-shared JSON file the bridge reads.
+bridge 以 systemd `--user` 服务形式运行在与 Claude Code 同一台机器上。后台线程每 45 秒刷新一次 ccusage，使 ESP32 的 HTTP 请求始终从缓存秒返（ccusage 冷启动约需 10 秒）。真实的 5h/7d 用量由另一个 root systemd timer 每 3 分钟探测一次 Anthropic API，将结果写入共享 JSON 文件，bridge 读取该文件。
 
 ```
 14:30                            ☁  24°C
@@ -45,119 +40,116 @@ IN 26.3°C  65%RH         SHENZHEN  Partly
  total  18.2M   $214│ today    2.4M tok
 ```
 
-## Hardware
+## 硬件
 
-- [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2" reflective LCD (paper-like), ESP32-S3, WiFi, RTC, temp/humidity, SD, audio.
-- USB-C cable for flashing.
+- [Waveshare ESP32-S3-RLCD-4.2](https://www.waveshare.com/wiki/ESP32-S3-RLCD-4.2) — 4.2 英寸反射式 LCD（类纸面），ESP32-S3，Wi-Fi，RTC，温湿度，SD，音频。
+- USB-C 数据线（用于烧录）。
 
-## Architecture
+## 架构
 
 ```
-Linux / macOS PC                          ESP32-S3-RLCD-4.2
-────────────────                          ─────────────────
-~/.claude/**/*.jsonl                      LVGL terminal UI
+Linux / macOS 主机                        ESP32-S3-RLCD-4.2
+──────────────                            ─────────────────
+~/.claude/**/*.jsonl                      LVGL 终端 UI
         │                                         ▲
-        ▼                      LAN HTTP           │
-   bridge daemon ──── GET /api/usage (60s) ──────┘
-   (spawns ccusage)
+        ▼                    局域网 HTTP           │
+   bridge 守护进程 ── GET /api/usage (60s) ───────┘
+   （调用 ccusage）
    :7777
 ```
 
-- **Bridge** (`bridge/`) — Python FastAPI daemon. Spawns `ccusage blocks/daily/monthly --json`, flattens into one schema, serves at `http://<host>:7777/api/usage`. Runs under systemd `--user`.
-- **Firmware** (`firmware/`) — ESP-IDF + LVGL v9. Polls the bridge every 60 s, renders a two-column dashboard on the RLCD.
+- **Bridge**（`bridge/`）— Python FastAPI 守护进程。调用 `ccusage blocks/daily/monthly --json`，汇总成统一 schema，在 `http://<主机>:7777/api/usage` 提供服务。以 systemd `--user` 方式运行。
+- **固件**（`firmware/`）— ESP-IDF + LVGL v9 项目。每 60 秒轮询 bridge，在 RLCD 上渲染双栏仪表盘。
 
 ---
 
-## Deployment
+## 部署步骤
 
-### Step 1 — Prerequisites
+### 第一步 — 安装前置依赖
 
-On the machine where Claude Code runs (Linux):
+在运行 Claude Code 的机器上（Linux）：
 
 ```bash
-# 1. uv (Python package manager)
+# 1. uv（Python 包管理器）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Node + npx  (ccusage is an npm package)
-# Ubuntu/Debian:
+# 2. Node + npx（ccusage 是 npm 包）
+# Ubuntu/Debian：
 sudo apt install nodejs npm
-# or use nvm: https://github.com/nvm-sh/nvm
+# 或使用 nvm：https://github.com/nvm-sh/nvm
 
-# 3. Verify ccusage works
+# 3. 验证 ccusage 可用
 npx -y ccusage@latest --help
 ```
 
-### Step 2 — Clone and test the bridge
+### 第二步 — 克隆并本地测试 bridge
 
 ```bash
 git clone https://github.com/CEJXXX/token-monitor-RLCD.git
 cd token-monitor-RLCD/bridge
 
-uv sync                            # install Python deps (first time only)
-uv run python bridge.py            # starts on :7777
+uv sync                            # 安装 Python 依赖（首次）
+uv run python bridge.py            # 监听 :7777
 ```
 
-In another terminal:
+新开一个终端验证：
 
 ```bash
-curl http://localhost:7777/api/usage | jq          # live data
-curl 'http://localhost:7777/api/usage?mock=1' | jq # canned mock — no ccusage needed
+curl http://localhost:7777/api/usage | jq          # 实时数据
+curl 'http://localhost:7777/api/usage?mock=1' | jq # 模拟数据（不依赖 ccusage）
 ```
 
-### Step 3 — Install the bridge as a systemd service
+### 第三步 — 安装为 systemd 服务
 
 ```bash
-# From repo root:
+# 在仓库根目录执行：
 scripts/install-bridge-linux.sh
 ```
 
-This creates `~/.config/systemd/user/rlcd-bridge.service`, enables it, and starts it.
+脚本会自动创建 `~/.config/systemd/user/rlcd-bridge.service` 并启动服务。
 
 ```bash
 systemctl --user status rlcd-bridge
 journalctl --user -u rlcd-bridge -f
 ```
 
-To keep it running after logout (VPS / headless server):
+如果需要退出登录后继续运行（VPS / 无头服务器）：
 
 ```bash
 loginctl enable-linger $USER
 ```
 
-#### Optional env vars
+#### 可选环境变量
 
-Create `bridge/.env` (git-ignored) with any of these:
+创建 `bridge/.env`（已在 .gitignore 中）并按需填写：
 
 ```ini
-RLCD_HOST=0.0.0.0          # bind address (default 0.0.0.0)
-RLCD_PORT=7777              # bind port    (default 7777)
-RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
-RLCD_WEATHER_LAT=22.5431   # your latitude  (default: Shenzhen)
-RLCD_WEATHER_LON=114.0579  # your longitude
-RLCD_WEATHER_CITY=MYTOWN   # city label on device (≤8 chars)
-DEEPSEEK_API_KEY=sk-...    # enables DeepSeek balance display (optional)
-RLCD_WEEKLY_LIMIT_USD=100  # your weekly budget — enables the weekly % bar
-RLCD_BLOCK_LIMIT_USD=20    # your 5h window budget — enables the 5h % bar
+RLCD_HOST=0.0.0.0          # 监听地址（默认 0.0.0.0）
+RLCD_PORT=7777              # 监听端口（默认 7777）
+RLCD_AUTH_TOKEN=<随机串>    # 非本地访问时必须设置
+RLCD_WEATHER_LAT=22.5431   # 纬度（默认深圳）
+RLCD_WEATHER_LON=114.0579  # 经度
+RLCD_WEATHER_CITY=SHENZHEN # 设备上显示的城市名（≤8 个字符）
+DEEPSEEK_API_KEY=sk-...    # 启用 DeepSeek 余额显示（可选）
+RLCD_WEEKLY_LIMIT_USD=100  # 你的周预算，设置后启用周进度条
+RLCD_BLOCK_LIMIT_USD=20    # 你的 5h 窗口预算，设置后启用 5h 进度条
 ```
 
-Reload after editing:
+修改后重启服务：
 
 ```bash
 systemctl --user restart rlcd-bridge
 ```
 
-**Always set `RLCD_AUTH_TOKEN`** when the bridge listens on anything beyond loopback. Generate one with:
+**只要 bridge 不是只监听 loopback，就必须设置 `RLCD_AUTH_TOKEN`。** 生成随机 token：
 
 ```bash
 openssl rand -hex 32
 ```
 
-### Step 4 — Real 5h/7d utilization (optional, requires root)
+### 第四步 — 获取真实 5h/7d 用量（可选，需要 root）
 
-The real window utilization shown by Claude Code's `/usage` command comes from
-`anthropic-ratelimit-unified-*` response headers. A root systemd timer reads the
-OAuth token from `/root/.claude/.credentials.json` and writes the values to
-`/run/rlcd/claude-limits.json` every 3 minutes.
+Claude Code `/usage` 显示的窗口用量来自 `anthropic-ratelimit-unified-*` 响应头。需要 root 权限读取 `/root/.claude/.credentials.json` 中的 OAuth token，再调用 Anthropic API 并写入 `/run/rlcd/claude-limits.json`。一个 root systemd timer 每 3 分钟运行一次：
 
 ```bash
 sudo install -m 0755 scripts/rlcd-claude-limits.py /usr/local/sbin/rlcd-claude-limits.py
@@ -167,105 +159,98 @@ sudo systemctl enable --now rlcd-claude-limits.timer
 sudo systemctl status rlcd-claude-limits.timer
 ```
 
-Each run costs one 1-token Haiku message (negligible). If the OAuth token
-expires, `limits.status` becomes `stale` and the device keeps showing the last
-good values.
+每次运行消耗一条 1-token Haiku 消息（费用极低）。若 OAuth token 失效，`limits.status` 变为 `stale`，设备继续显示上次有效数据。
 
-> Anthropic does **not** publish plan limits via API. Set
-> `RLCD_WEEKLY_LIMIT_USD` / `RLCD_BLOCK_LIMIT_USD` to enable the % bars.
+> Anthropic 不通过 API 公开 Pro/Max 套餐的 token 或金额上限。若要启用进度条，需手动设置 `RLCD_WEEKLY_LIMIT_USD` / `RLCD_BLOCK_LIMIT_USD`。
 
-### Step 5 — Build and flash the firmware
+### 第五步 — 编译并烧录固件
 
-#### Prerequisites
+#### 前置工具
 
 - [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/)
-- Windows: download the **Universal Online Installer** from <https://dl.espressif.com/dl/esp-idf/> (pick latest v5.x, target `esp32s3`).
+- Windows：从 <https://dl.espressif.com/dl/esp-idf/> 下载 **Universal Online Installer**（选最新 v5.x，目标芯片选 `esp32s3`）。
 
 #### Linux / macOS
 
 ```bash
 cd firmware
 cp main/secrets.h.example main/secrets.h
-$EDITOR main/secrets.h           # fill in WiFi SSID/pass + bridge URL + token
+$EDITOR main/secrets.h    # 填入 Wi-Fi SSID/密码、bridge 地址、token
 
 idf.py set-target esp32s3
-idf.py build flash monitor       # Ctrl+] to exit monitor
+idf.py build flash monitor    # Ctrl+] 退出串口监视器
 ```
 
-#### Windows (PowerShell via ESP-IDF Start Menu shortcut)
+#### Windows（通过开始菜单 ESP-IDF PowerShell 快捷方式）
 
 ```powershell
 cd C:\path\to\token-monitor-RLCD\firmware
 copy main\secrets.h.example main\secrets.h
-notepad main\secrets.h           # fill in WiFi / bridge URL / token
+notepad main\secrets.h    # 填入 Wi-Fi / bridge 地址 / token
 idf.py set-target esp32s3
 idf.py build flash monitor
 ```
 
-#### `secrets.h` values
+#### `secrets.h` 各项说明
 
-| Key | Example | Notes |
-|-----|---------|-------|
-| `RLCD_WIFI_SSID` | `"MyNetwork"` | 2.4 GHz only (ESP32 does not support 5 GHz) |
+| 字段 | 示例 | 说明 |
+|------|------|------|
+| `RLCD_WIFI_SSID` | `"MyNetwork"` | 仅支持 2.4 GHz（ESP32 不支持 5 GHz） |
 | `RLCD_WIFI_PASSWORD` | `"password"` | WPA2 |
-| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | bridge host address — see deployment modes below |
-| `RLCD_BRIDGE_TOKEN` | `""` | match `RLCD_AUTH_TOKEN` if set, else leave empty |
-| `RLCD_POLL_SEC` | `60` | poll interval in seconds |
+| `RLCD_BRIDGE_URL` | `"http://192.168.1.42:7777/api/usage"` | bridge 地址，见下方部署模式 |
+| `RLCD_BRIDGE_TOKEN` | `""` | 与 `RLCD_AUTH_TOKEN` 保持一致，未设置则留空 |
+| `RLCD_POLL_SEC` | `60` | 轮询间隔（秒） |
 
-The first build downloads `lvgl/lvgl@^9.4.0` via the IDF component manager (~50 MB) — needs internet.
+首次编译会通过 IDF 组件管理器下载 `lvgl/lvgl@^9.4.0`（约 50 MB），需要联网。
 
-### Step 6 — Verify
+### 第六步 — 验证
 
-1. Serial monitor prints `connecting to <ssid>...` → `got IP ...`, then the dashboard fills.
-2. Use mock mode first: set `RLCD_BRIDGE_URL` to `.../api/usage?mock=1`, flash, confirm the UI renders.
-3. Switch to live mode, run Claude Code for a minute, watch `active_block.tokens_used` increase on the next poll.
-4. Stop the bridge: UI should show `(stale)` but not crash.
+1. 串口监视器打印 `connecting to <ssid>...` → `got IP ...`，随后仪表盘填充数据。
+2. 建议先用 mock 模式：将 `RLCD_BRIDGE_URL` 改为 `.../api/usage?mock=1` 烧录，确认 UI 正常渲染。
+3. 切换回实时模式，跑一分钟 Claude Code，等下次轮询后观察 `active_block.tokens_used` 增长。
+4. 停止 bridge 服务：UI 应显示 `(stale)` 但不崩溃，保持上次数据。
 
 ---
 
-## Deployment modes
+## 部署模式
 
-### Mode A — Same LAN (simplest)
+### 模式 A — 同局域网（最简单）
 
-Bridge and ESP32 are on the same home/office network.
+bridge 和 ESP32 在同一个家庭/办公室网络中。
 
 ```ini
 # bridge/.env
 RLCD_HOST=0.0.0.0
-RLCD_AUTH_TOKEN=<random-32-bytes>
+RLCD_AUTH_TOKEN=<随机32字节>
 ```
 
 ```c
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://192.168.1.42:7777/api/usage"
-#define RLCD_BRIDGE_TOKEN "<same-token>"
+#define RLCD_BRIDGE_TOKEN "<相同token>"
 ```
 
-### Mode B — Public internet (bridge on a VPS)
+### 模式 B — 公网直连（bridge 在 VPS 上）
 
-Expose the bridge directly on the VPS's public IP. The ESP32 connects over the
-open internet, so a strong token and firewall rules are essential.
+将 bridge 直接暴露在 VPS 的公网 IP 上，ESP32 通过公网连接。由于流量经过公网，强 token 和防火墙规则必不可少。
 
 ```ini
-# bridge/.env on VPS
-RLCD_HOST=0.0.0.0          # or bind to a specific public interface
-RLCD_AUTH_TOKEN=<random-32-bytes>
+# VPS 上的 bridge/.env
+RLCD_HOST=0.0.0.0
+RLCD_AUTH_TOKEN=<随机32字节>
 ```
 
 ```c
 // secrets.h
 #define RLCD_BRIDGE_URL   "http://203.0.113.10:7777/api/usage"
-#define RLCD_BRIDGE_TOKEN "<same-token>"
+#define RLCD_BRIDGE_TOKEN "<相同token>"
 ```
 
-Firewall: open port 7777 only while you need it, or restrict source IP to your
-home ISP's address range.
+防火墙：仅在需要时开放 7777 端口，或限制来源 IP 为家庭宽带的 IP 段。
 
-#### Optional: HTTPS via reverse proxy (nginx)
+#### 进阶：用反向代理套 HTTPS（nginx）
 
-For a more secure setup, put the bridge behind nginx with a TLS certificate
-(e.g. from Let's Encrypt via Certbot). This removes the need to open port 7777
-and lets you terminate TLS on port 443.
+更安全的方案是在 nginx 后面运行 bridge，配合 Let's Encrypt 证书做 TLS 终止。这样无需开放 7777 端口，统一走 443。
 
 ```nginx
 # /etc/nginx/sites-available/rlcd
@@ -287,19 +272,15 @@ server {
 ```
 
 ```c
-// secrets.h — note https://
+// secrets.h — 注意 https://
 #define RLCD_BRIDGE_URL   "https://rlcd.example.com/api/usage"
 ```
 
-> The ESP32 HTTP client supports HTTPS but requires the server CA certificate
-> embedded in the firmware. For a Let's Encrypt cert, embed the ISRG Root X1
-> PEM in `usage_client.c` and pass it via `esp_http_client_config_t.cert_pem`.
+> ESP32 HTTP 客户端支持 HTTPS，但需要将服务器 CA 证书内嵌到固件中。使用 Let's Encrypt 证书时，将 ISRG Root X1 的 PEM 内嵌到 `usage_client.c` 并通过 `esp_http_client_config_t.cert_pem` 传入。
 
-### Mode C — Overlay network (ZeroTier / Tailscale)
+### 模式 C — overlay 网络（ZeroTier / Tailscale）
 
-The ESP32 must be reachable on the same overlay as the bridge — typically via a
-home router or always-on device (Raspberry Pi, NAS) that joins the overlay and
-routes traffic to the home LAN.
+ESP32 需要能访问与 bridge 相同的 overlay 网络——通常通过家用路由器或常开设备（树莓派、NAS）接入 overlay 并路由流量到家庭局域网。
 
 ```c
 // secrets.h — Tailscale
@@ -309,55 +290,54 @@ routes traffic to the home LAN.
 #define RLCD_BRIDGE_URL   "http://10.x.x.x:7777/api/usage"
 ```
 
-#### ZeroTier MTU fix
+#### ZeroTier MTU 问题
 
-If the TCP handshake succeeds but responses never arrive, ZeroTier's default
-2800-byte MTU is larger than the real path MTU (~1400 bytes). Fix on the VPS:
+若 TCP 握手成功但响应始终收不到，原因是 ZeroTier 默认 MTU 2800 字节大于实际路径 MTU（约 1400 字节）。在 VPS 上修复：
 
 ```bash
-# Find your ZeroTier interface name first:
+# 先查你的 ZeroTier 接口名：
 ip link show | grep zt
 
-sudo scripts/vps-zt-mtu-fix.sh <zt-interface>
+sudo scripts/vps-zt-mtu-fix.sh <zt-接口名>
 sudo cp scripts/rlcd-zt-fix.service /etc/systemd/system/
-sudo systemctl enable --now rlcd-zt-fix.service   # persists across reboots
+sudo systemctl enable --now rlcd-zt-fix.service   # 开机自动生效
 ```
 
-The cleanest alternative is to set the ZeroTier network MTU to 1400 in ZeroTier Central.
+最简洁的方案是在 ZeroTier Central 把网络 MTU 设为 1400，所有成员自动生效。
 
 ---
 
-## Project layout
+## 项目结构
 
 ```
 token-monitor-RLCD/
-├── bridge/                    # Python FastAPI bridge daemon
-│   ├── bridge.py              # main app + background refresh cache
-│   ├── schema.py              # Pydantic response models
+├── bridge/                    # Python FastAPI bridge 守护进程
+│   ├── bridge.py              # 主程序 + 后台刷新缓存
+│   ├── schema.py              # Pydantic 响应模型
 │   ├── sources/
-│   │   ├── claude_local.py    # ccusage integration
-│   │   ├── claude_limits.py   # reads /run/rlcd/claude-limits.json
-│   │   ├── deepseek.py        # DeepSeek balance API
-│   │   └── weather.py         # open-meteo (no API key needed)
+│   │   ├── claude_local.py    # ccusage 集成
+│   │   ├── claude_limits.py   # 读取 /run/rlcd/claude-limits.json
+│   │   ├── deepseek.py        # DeepSeek 余额 API
+│   │   └── weather.py         # open-meteo（免 API key）
 │   └── pyproject.toml
-├── firmware/                  # ESP-IDF v5 + LVGL v9 project
+├── firmware/                  # ESP-IDF v5 + LVGL v9 项目
 │   ├── main/
-│   │   ├── secrets.h.example  # → copy to secrets.h (git-ignored)
-│   │   └── user_config.h      # pin assignments (from vendor BSP)
+│   │   ├── secrets.h.example  # → 复制为 secrets.h（已 gitignore）
+│   │   └── user_config.h      # 引脚定义（来自厂商 BSP）
 │   └── components/
-│       ├── net_app/           # WiFi STA + NTP (CST-8)
-│       ├── sensor/            # SHTC3 temp/humidity
-│       ├── usage_client/      # HTTP poll + cJSON parse
-│       └── ui_app/            # LVGL two-column dashboard + icons
+│       ├── net_app/           # Wi-Fi STA + NTP（CST-8）
+│       ├── sensor/            # SHTC3 温湿度驱动
+│       ├── usage_client/      # HTTP 轮询 + cJSON 解析
+│       └── ui_app/            # LVGL 双栏仪表盘 + 图标
 ├── scripts/
-│   ├── install-bridge-linux.sh          # systemd --user installer
-│   ├── rlcd-claude-limits.py            # root timer: fetch + write limits JSON
+│   ├── install-bridge-linux.sh           # systemd --user 安装脚本
+│   ├── rlcd-claude-limits.py             # root 定时器：获取并写入限额 JSON
 │   ├── rlcd-claude-limits.{service,timer}
-│   └── vps-zt-mtu-fix.sh                # ZeroTier MTU/MSS fix
+│   └── vps-zt-mtu-fix.sh                 # ZeroTier MTU/MSS 修复
 └── docs/
-    └── mockup.png             # UI reference mockup
+    └── mockup.png             # UI 参考原型图
 ```
 
-## License
+## 许可证
 
 MIT
