@@ -131,6 +131,9 @@ RLCD_AUTH_TOKEN=<随机串>    # 非本地访问时必须设置
 RLCD_WEATHER_LAT=22.5431   # 纬度（默认深圳）
 RLCD_WEATHER_LON=114.0579  # 经度
 RLCD_WEATHER_CITY=SHENZHEN # 设备上显示的城市名（≤8 个字符）
+# 天气源（二选一，优先 Caiyun；不设则自动用 open-meteo，无需 key）
+CAIYUN_API_KEY=<彩云天气token>   # 推荐，国内准确度更高；申请：https://dashboard.caiyunapp.com
+# QWEATHER_KEY=<和风天气key>     # 备选（需自行适配 sources/weather.py）
 DEEPSEEK_API_KEY=sk-...    # 启用 DeepSeek 余额显示（可选）
 RLCD_WEEKLY_LIMIT_USD=100  # 你的周预算，设置后启用周进度条
 RLCD_BLOCK_LIMIT_USD=20    # 你的 5h 窗口预算，设置后启用 5h 进度条

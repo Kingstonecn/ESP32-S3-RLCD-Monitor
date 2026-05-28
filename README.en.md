@@ -136,6 +136,9 @@ RLCD_AUTH_TOKEN=<random>   # required when bridge is reachable beyond loopback
 RLCD_WEATHER_LAT=22.5431   # your latitude  (default: Shenzhen)
 RLCD_WEATHER_LON=114.0579  # your longitude
 RLCD_WEATHER_CITY=MYTOWN   # city label on device (≤8 chars)
+# Weather source — pick one (Caiyun takes priority; omit both to use open-meteo, no key needed)
+CAIYUN_API_KEY=<token>     # recommended for China; register at https://dashboard.caiyunapp.com
+# QWEATHER_KEY=<key>       # alternative (requires adapting sources/weather.py)
 DEEPSEEK_API_KEY=sk-...    # enables DeepSeek balance display (optional)
 RLCD_WEEKLY_LIMIT_USD=100  # your weekly budget — enables the weekly % bar
 RLCD_BLOCK_LIMIT_USD=20    # your 5h window budget — enables the 5h % bar
