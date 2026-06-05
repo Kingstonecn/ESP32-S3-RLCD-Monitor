@@ -1,28 +1,34 @@
-// Two-column dashboard: header (time | indoor | Shenzhen weather),
-// left CLAUDE (5h/7d bars + today/month/total), right DEEPSEEK (balance).
-// Built once in ui_app_init(); update functions only set text/values so the
-// reflective panel only redraws on the 60s poll. See docs/mockup.png.
-//
-// 1-bit panel: everything is pure black (no grayscale). Amounts use a bold
-// font (font_amt14); the balance uses a bold ¥-capable font (font_bal28).
-
+// Full-screen DeepSeek dashboard for RLCD 4.2 (400x300, 1-bit reflective).
+// Header: time+weather | WiFi+battery, then FC/IN/RH.
+// Body: centered DeepSeek balance + two-column TODAY|MONTH usage.
 #include "ui_app.h"
 #include "icons.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
 
-LV_FONT_DECLARE(font_amt14);   // DejaVuSans-Bold 14 (ascii + °)
+LV_FONT_DECLARE(font_amt14);   // Arial-Bold 14 (ascii + ° + ¥)
 LV_FONT_DECLARE(font_bal28);   // DejaVuSans-Bold 28 (digits . ¥)
 
 #define INK   lv_color_black()
 #define WHITE lv_color_white()
 
-static lv_obj_t *lbl_time, *lbl_indoor, *img_wx, *lbl_wx_temp, *lbl_wx_city;
-static lv_obj_t *bar_5h, *bar_7d, *lbl_5h_pct, *lbl_7d_pct, *lbl_reset;
-static lv_obj_t *c_tok[3], *c_cost[3];
-static lv_obj_t *lbl_ds_bal, *ds_val[3];
+// Header
+static lv_obj_t *lbl_time_weather;   // "14:30 阴天" (28px)
+static lv_obj_t *lbl_env;            // "FC 21°C / IN 26.3°C / RH 65%" (14px)
+static lv_obj_t *img_wifi;
+static lv_obj_t *img_battery;
+static lv_obj_t *lbl_bat_pct;        // "85%"
+
+// DeepSeek centered brand
+static lv_obj_t *lbl_ds_bal;         // ¥ amount (bal28)
+
+// Usage columns
+static lv_obj_t *ds_hdr[2];   // "TODAY", "MONTH"
+static lv_obj_t *ds_val[6];   // [today-tok, today-cost, today-cch, month-tok, month-cost, month-cch]
+
 static bool have_data;
+static float _fc_temp = -99.0f;  // last forecast temp from bridge
 
 static void fmt_tok(char *o, size_t n, int64_t t)
 {
@@ -31,14 +37,6 @@ static void fmt_tok(char *o, size_t n, int64_t t)
     else if (t >= 1000000LL)    snprintf(o, n, "%.1fM", t / 1e6);
     else if (t >= 1000LL)       snprintf(o, n, "%.0fk", t / 1e3);
     else                        snprintf(o, n, "%lld", (long long) t);
-}
-// keep amounts short so they never overflow the column:
-//   < $100  -> 2 decimals ($98.42)   $100-999 -> integer ($182)   >= $1000 -> "$X.Xk"
-static void fmt_cost(char *o, size_t n, double c)
-{
-    if      (c < 100)  snprintf(o, n, "$%.2f", c);
-    else if (c < 1000) snprintf(o, n, "$%.0f", c);
-    else               snprintf(o, n, "$%.1fk", c / 1000.0);
 }
 
 static lv_obj_t *mklabel(lv_obj_t *p, int x, int y, const lv_font_t *f, const char *t)
@@ -58,7 +56,7 @@ static lv_obj_t *mkalign(lv_obj_t *p, int left_x, int y, int w, lv_text_align_t 
     lv_obj_set_style_text_color(l, INK, 0);
     lv_obj_set_width(l, w);
     lv_obj_set_style_text_align(l, a, 0);
-    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);  // never wrap a fixed column
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
     lv_obj_set_pos(l, left_x, y);
     lv_label_set_text(l, t);
     return l;
@@ -72,22 +70,6 @@ static void mkdiv(lv_obj_t *p, int x, int y, int w, int h)
     lv_obj_set_style_bg_color(d, INK, 0);
     lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
 }
-static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
-{
-    lv_obj_t *b = lv_bar_create(p);
-    lv_obj_set_pos(b, x, y);
-    lv_obj_set_size(b, w, 13);
-    lv_bar_set_range(b, 0, 100);
-    lv_obj_set_style_radius(b, 6, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(b, WHITE, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(b, INK, LV_PART_MAIN);
-    lv_obj_set_style_border_width(b, 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(b, 6, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(b, INK, LV_PART_INDICATOR);
-    lv_bar_set_value(b, 0, LV_ANIM_OFF);
-    return b;
-}
 static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
 {
     lv_obj_t *im = lv_image_create(p);
@@ -97,6 +79,13 @@ static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
     lv_obj_set_style_image_recolor_opa(im, LV_OPA_COVER, 0);
     return im;
 }
+static lv_obj_t *mkrawicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
+{
+    lv_obj_t *im = lv_image_create(p);
+    lv_image_set_src(im, src);
+    lv_obj_set_pos(im, x, y);
+    return im;
+}
 
 void ui_app_init(void)
 {
@@ -104,112 +93,164 @@ void ui_app_init(void)
     lv_obj_set_style_bg_color(s, WHITE, 0);
     lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
 
-    // ---- header ----
-    lbl_time   = mklabel(s, 10, 4, &lv_font_montserrat_28, "--:--");
-    lbl_indoor = mklabel(s, 12, 44, &lv_font_montserrat_14, "IN --.-\xC2\xB0""C  --%RH");
-    img_wx     = mkicon(s, 280, 8, &icon_wx_cloud);
-    lbl_wx_temp = mkalign(s, 308, 10, 80, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_20, "--\xC2\xB0""C");
-    lbl_wx_city = mkalign(s, 208, 44, 180, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "SHENZHEN");
+    // ---- header line 1: time+weather | WiFi battery ----
+    lbl_time_weather = mklabel(s, 10, 4, &lv_font_montserrat_28, "--:--");
+    img_wifi   = mkrawicon(s, 318, 8, &icon_wifi);
+    img_battery = mkrawicon(s, 342, 10, &icon_bat_full);
+    lbl_bat_pct = mkalign(s, 370, 10, 30, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
+
+    // ---- header line 2: FC / IN / RH ----
+    lbl_env = mklabel(s, 10, 44, &lv_font_montserrat_14,
+                      "FC --\xC2\xB0""C / IN --.-\xC2\xB0""C / RH --%");
+
     mkdiv(s, 10, 66, 380, 2);
 
-    mkdiv(s, 200, 74, 2, 214);   // column split
+    // ---- centered brand: icon + title + balance + ¥ ----
+    mkicon(s, 120, 84, &icon_deepseek);
+    mklabel(s, 160, 88, &lv_font_montserrat_20, "DEEPSEEK");
+    mkalign(s, 100, 120, 200, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_20, "balance");
+    lbl_ds_bal = mkalign(s, 100, 152, 200, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
 
-    // ---- left: CLAUDE ----
-    mkicon(s, 10, 72, &icon_claudecode);
-    mklabel(s, 50, 76, &lv_font_montserrat_20, "CLAUDE");
-    mklabel(s, 12, 112, &lv_font_montserrat_14, "5h");
-    bar_5h = mkbar(s, 40, 112, 96);
-    lbl_5h_pct = mkalign(s, 140, 110, 52, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--%");
-    mklabel(s, 12, 136, &lv_font_montserrat_14, "7d");
-    bar_7d = mkbar(s, 40, 136, 96);
-    lbl_7d_pct = mkalign(s, 140, 134, 52, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--%");
-    lbl_reset  = mklabel(s, 12, 160, &lv_font_montserrat_14, "reset --");
-    mkdiv(s, 12, 184, 178, 1);
-    const char *crows[3] = {"today", "month", "total"};
-    for (int i = 0; i < 3; ++i) {
-        int y = 192 + i * 28;
-        mklabel(s, 12, y, &lv_font_montserrat_14, crows[i]);
-        c_tok[i]  = mkalign(s, 60, y, 64, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
-        c_cost[i] = mkalign(s, 128, y, 64, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
+    mkdiv(s, 10, 190, 380, 1);
+
+    // ---- usage: two-column (TODAY | MONTH) ----
+    ds_hdr[0] = mkalign(s, 20, 200, 170, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "TODAY");
+    ds_hdr[1] = mkalign(s, 210, 200, 170, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "MONTH");
+    for (int i = 0; i < 2; ++i) {
+        int bx = 20 + i * 190;
+        ds_val[i*3+0] = mkalign(s, bx, 226, 170, LV_TEXT_ALIGN_CENTER, &font_amt14, "-");  // tokens
+        ds_val[i*3+1] = mkalign(s, bx, 250, 170, LV_TEXT_ALIGN_CENTER, &font_amt14, "-");  // cost
+        ds_val[i*3+2] = mkalign(s, bx, 274, 170, LV_TEXT_ALIGN_CENTER, &font_amt14, "-");  // cache
     }
 
-    // ---- right: DEEPSEEK ----
-    mkicon(s, 210, 72, &icon_deepseek);
-    mklabel(s, 250, 76, &lv_font_montserrat_20, "DEEPSEEK");
-    mkalign(s, 212, 104, 176, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "balance");
-    lbl_ds_bal = mkalign(s, 212, 132, 176, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
-    mkdiv(s, 212, 184, 178, 1);
-    const char *drows[3] = {"granted", "topped", "today"};
-    for (int i = 0; i < 3; ++i) {
-        int y = 192 + i * 28;
-        mklabel(s, 212, y, &lv_font_montserrat_14, drows[i]);
-        ds_val[i] = mkalign(s, 268, y, 120, LV_TEXT_ALIGN_RIGHT, &font_amt14, "-");
-    }
     have_data = false;
-}
-
-static const lv_image_dsc_t *wx_icon(const char *key)
-{
-    if (!strcmp(key, "clear"))  return &icon_wx_clear;
-    if (!strcmp(key, "partly")) return &icon_wx_partly;
-    if (!strcmp(key, "rain"))   return &icon_wx_rain;
-    if (!strcmp(key, "snow"))   return &icon_wx_snow;
-    if (!strcmp(key, "fog"))    return &icon_wx_fog;
-    return &icon_wx_cloud;
 }
 
 void ui_app_update(const usage_report_t *r)
 {
     if (!r) return;
-    have_data = true;
-    char tk[16], ct[16];
-
-    int p5 = r->limits.util_5h_x100, p7 = r->limits.util_7d_x100;
-    if (p5 >= 0) { lv_bar_set_value(bar_5h, p5, LV_ANIM_OFF); char b[16]; snprintf(b, 16, "%d%%", p5); lv_label_set_text(lbl_5h_pct, b); }
-    if (p7 >= 0) { lv_bar_set_value(bar_7d, p7, LV_ANIM_OFF); char b[16]; snprintf(b, 16, "%d%%", p7); lv_label_set_text(lbl_7d_pct, b); }
-    { char b[40]; int m = r->limits.reset_5h_min;
-      if (m >= 0) snprintf(b, sizeof(b), "reset in %dh%02dm", m / 60, m % 60);
-      else        snprintf(b, sizeof(b), "reset --");
-      lv_label_set_text(lbl_reset, b); }
-
-    const usage_bucket_t *cb[3] = { &r->today, &r->month, &r->lifetime };
-    for (int i = 0; i < 3; ++i) {
-        fmt_tok(tk, sizeof(tk), cb[i]->tokens_used);  lv_label_set_text(c_tok[i], tk);
-        fmt_cost(ct, sizeof(ct), cb[i]->cost_usd);    lv_label_set_text(c_cost[i], ct);
-    }
+    char tk[16], b[40];
 
     if (r->deepseek.valid) {
-        char b[24];
-        snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);  lv_label_set_text(lbl_ds_bal, b);  // ¥
-        snprintf(b, sizeof(b), "%.2f", r->deepseek.granted);  lv_label_set_text(ds_val[0], b);
-        snprintf(b, sizeof(b), "%.2f", r->deepseek.topped);   lv_label_set_text(ds_val[1], b);
-        fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
-        strncat(tk, " tok", sizeof(tk) - strlen(tk) - 1);     lv_label_set_text(ds_val[2], tk);
+        snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);
+        lv_label_set_text(lbl_ds_bal, b);
+
+        // Only update usage data when tokens > 0 (real ccusage data)
+        bool has_usage = (r->deepseek.today_tokens > 0 || r->deepseek.month_tokens > 0);
+        if (has_usage) {
+            // Update column header: "TODAY" or "YESTERDAY"
+            lv_label_set_text(ds_hdr[0], r->deepseek.today_label);
+
+            // today
+            fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
+            snprintf(b, sizeof(b), "%s tokens", tk);
+            lv_label_set_text(ds_val[0], b);
+            snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.today_cost_cny);
+            lv_label_set_text(ds_val[1], b);
+            if (r->deepseek.today_cache_pct >= 0)
+                { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.today_cache_pct); lv_label_set_text(ds_val[2], b); }
+
+            // month
+            fmt_tok(tk, sizeof(tk), r->deepseek.month_tokens);
+            snprintf(b, sizeof(b), "%s tokens", tk);
+            lv_label_set_text(ds_val[3], b);
+            snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.month_cost_cny);
+            lv_label_set_text(ds_val[4], b);
+            if (r->deepseek.month_cache_pct >= 0)
+                { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.month_cache_pct); lv_label_set_text(ds_val[5], b); }
+
+            have_data = true;
+        }
     }
 
     if (r->weather.valid) {
-        lv_image_set_src(img_wx, wx_icon(r->weather.icon));
-        char b[16]; snprintf(b, sizeof(b), "%.0f\xC2\xB0""C", r->weather.temp_c);
-        lv_label_set_text(lbl_wx_temp, b);
-        char c[40]; snprintf(c, sizeof(c), "%-8s  %s", r->weather.city, r->weather.condition);
-        lv_label_set_text(lbl_wx_city, c);
+        _fc_temp = r->weather.temp_c;
+        char b[64];
+        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
+        lv_label_set_text(lbl_env, b);
     }
 }
 
 void ui_app_set_env(float temp_c, float humidity, bool ok)
 {
-    char b[40];
-    if (ok) snprintf(b, sizeof(b), "IN %.1f\xC2\xB0""C  %.0f%%RH", temp_c, humidity);
-    else    snprintf(b, sizeof(b), "IN --");
-    lv_label_set_text(lbl_indoor, b);
+    char b[64];
+    if (_fc_temp > -50.0f && ok)
+        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
+                 _fc_temp, temp_c, humidity);
+    else if (_fc_temp > -50.0f)
+        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
+    else if (ok)
+        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%", temp_c, humidity);
+    else
+        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN -- / RH --%%");
+    lv_label_set_text(lbl_env, b);
 }
 
 void ui_app_set_time(const char *hm)
 {
-    if (lbl_time) lv_label_set_text(lbl_time, hm);
+    if (lbl_time_weather) {
+        const char *curr = lv_label_get_text(lbl_time_weather);
+        const char *desc = strchr(curr, ' ');
+        if (desc) {
+            char b[40];
+            snprintf(b, sizeof(b), "%s%s", hm, desc);
+            lv_label_set_text(lbl_time_weather, b);
+        } else {
+            lv_label_set_text(lbl_time_weather, hm);
+        }
+    }
+}
+
+void ui_app_set_weather_desc(const char *desc)
+{
+    if (lbl_time_weather && desc) {
+        const char *curr = lv_label_get_text(lbl_time_weather);
+        const char *existing = strchr(curr, ' ');
+        char time_part[16];
+        if (existing) {
+            size_t len = existing - curr;
+            if (len >= sizeof(time_part)) len = sizeof(time_part) - 1;
+            strncpy(time_part, curr, len);
+            time_part[len] = '\0';
+        } else {
+            strncpy(time_part, curr, sizeof(time_part) - 1);
+            time_part[sizeof(time_part) - 1] = '\0';
+        }
+        char b[40];
+        snprintf(b, sizeof(b), "%s %s", time_part, desc);
+        lv_label_set_text(lbl_time_weather, b);
+    }
+}
+
+void ui_app_set_wifi(bool connected)
+{
+    (void)connected;
+    // Icon is always visible on 1-bit panel
+}
+
+void ui_app_set_battery(int level, bool charging)
+{
+    if (!img_battery) return;
+    if (level < 0) {
+        lv_obj_add_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
+        if (lbl_bat_pct) lv_label_set_text(lbl_bat_pct, "");
+        return;
+    }
+    lv_obj_remove_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
+    const void *src = &icon_bat_full;
+    if (charging)        src = &icon_bat_chg;
+    else if (level < 20) src = &icon_bat_low;
+    else if (level < 60) src = &icon_bat_med;
+    lv_image_set_src(img_battery, src);
+
+    if (lbl_bat_pct) {
+        char b[12];
+        snprintf(b, sizeof(b), "%d%%", level);
+        lv_label_set_text(lbl_bat_pct, b);
+    }
 }
 
 void ui_app_mark_stale(void)
 {
-    // keep last good values; nothing to dim on a 1-bit panel
+    // keep last good values on 1-bit panel
 }

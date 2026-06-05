@@ -52,6 +52,12 @@ typedef struct {
     double  granted;
     double  topped;
     int64_t today_tokens;
+    double  today_cost_cny;
+    float   today_cache_pct;    // 0-100, -1 unknown
+    char    today_label[12];    // "TODAY" or "YESTERDAY"
+    int64_t month_tokens;
+    double  month_cost_cny;
+    float   month_cache_pct;    // 0-100, -1 unknown
     bool    valid;
 } usage_deepseek_t;
 

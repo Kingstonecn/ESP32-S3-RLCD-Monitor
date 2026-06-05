@@ -28,8 +28,6 @@ from schema import (
     UsageReport,
     Weather,
 )
-from sources.claude_local import fetch_claude, fetch_other_agents
-from sources.claude_limits import fetch_limits
 from sources.weather import fetch_weather
 from sources.deepseek import fetch_deepseek
 
@@ -44,16 +42,130 @@ _cache_lock = threading.Lock()
 _cache: dict[str, object] = {"report": None, "ts": 0.0, "error": None}
 
 
+USD_CNY = float(os.environ.get("RLCD_USD_CNY", "7.25"))  # USD→CNY rate
+
+
+def _fetch_ds_usage() -> dict:
+    """Run ccusage daily, return dict with today/month DeepSeek usage stats."""
+    import json, os, subprocess
+    from datetime import datetime
+    nodejs = r"C:\Program Files\nodejs"
+    npx_js = os.path.join(nodejs, "node_modules", "npm", "bin", "npx-cli.js")
+    env = os.environ.copy()
+    if nodejs not in env.get("PATH", ""):
+        env["PATH"] = nodejs + os.pathsep + env.get("PATH", "")
+    ccusage = os.environ.get("CCUSAGE_CMD")
+    default = {
+        "today_tokens": 0, "today_cost_cny": 0.0, "today_cache_pct": 0.0,
+        "month_tokens": 0, "month_cost_cny": 0.0, "month_cache_pct": 0.0,
+    }
+    try:
+        if ccusage:
+            proc = subprocess.run(
+                ccusage + " claude daily --json",
+                capture_output=True, text=True, timeout=30, shell=True, env=env,
+            )
+        else:
+            proc = subprocess.run(
+                [os.path.join(nodejs, "node.exe"), npx_js,
+                 "-y", "ccusage@latest", "claude", "daily", "--json"],
+                capture_output=True, text=True, timeout=30, env=env,
+            )
+        if proc.returncode != 0:
+            return default
+        data = json.loads(proc.stdout)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        month_str = datetime.now().strftime("%Y-%m")
+
+        def _sum_model(entries, date_filter):
+            inp = out = cr = cc = cost = 0
+            for e in entries:
+                if e.get("date", "") != date_filter:
+                    continue
+                for mb in e.get("modelBreakdowns", []):
+                    if "deepseek" not in (mb.get("modelName") or "").lower():
+                        continue
+                    inp += int(mb.get("inputTokens", 0) or 0)
+                    out += int(mb.get("outputTokens", 0) or 0)
+                    cr += int(mb.get("cacheReadTokens", 0) or 0)
+                    cc += int(mb.get("cacheCreationTokens", 0) or 0)
+                    cost += float(mb.get("cost", 0) or 0)
+            total = inp + out + cr + cc
+            cache_pct = (cr / (inp + cr + cc) * 100) if (inp + cr + cc) > 0 else 0.0
+            return total, cost * USD_CNY, cache_pct
+
+        today_tok, today_cny, today_cache = _sum_model(data.get("daily", []), today_str)
+
+        # If today is 0, fall back to yesterday's data
+        if today_tok == 0:
+            from datetime import timedelta
+            yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            y_tok, y_cny, y_cache = _sum_model(data.get("daily", []), yesterday_str)
+            if y_tok > 0:
+                today_tok, today_cny, today_cache = y_tok, y_cny, y_cache
+                _yesterday_label = "YESTERDAY"
+            else:
+                _yesterday_label = "TODAY"
+        else:
+            _yesterday_label = "TODAY"
+
+        # Month: sum all entries where date starts with month_str
+        month_tok = month_cny = month_cache_numer = month_cache_denom = 0
+        for e in data.get("daily", []):
+            if not e.get("date", "").startswith(month_str):
+                continue
+            mt, mc, mcp = _sum_model([e], e["date"])
+            month_tok += mt
+            month_cny += mc
+            # Recompute cache rate across all month entries
+        # Rebuild month cache rate properly
+        month_inp = month_out = month_cr = month_cc = 0
+        for e in data.get("daily", []):
+            if not e.get("date", "").startswith(month_str):
+                continue
+            for mb in e.get("modelBreakdowns", []):
+                if "deepseek" not in (mb.get("modelName") or "").lower():
+                    continue
+                month_inp += int(mb.get("inputTokens", 0) or 0)
+                month_cr += int(mb.get("cacheReadTokens", 0) or 0)
+                month_cc += int(mb.get("cacheCreationTokens", 0) or 0)
+        month_cache = (month_cr / (month_inp + month_cr + month_cc) * 100) if (month_inp + month_cr + month_cc) > 0 else 0.0
+
+        return {
+            "today_tokens": today_tok,
+            "today_cost_cny": round(today_cny, 2),
+            "today_cache_pct": round(today_cache, 1),
+            "today_label": _yesterday_label,
+            "month_tokens": month_tok,
+            "month_cost_cny": round(month_cny, 2),
+            "month_cache_pct": round(month_cache, 1),
+        }
+    except Exception:
+        return default
+
+
 def _build_live_report() -> UsageReport:
-    claude, ds_today = fetch_claude()
-    claude.limits = fetch_limits()
-    others = fetch_other_agents() if INCLUDE_OTHERS else []
+    """Build report. Extract DeepSeek usage from ccusage."""
+    from schema import Bucket, ClaudeUsage
+    empty = Bucket(tokens_used=0, cost_usd=0.0)
+    ds_usage = _fetch_ds_usage()
+    ds = fetch_deepseek(ds_usage["today_tokens"])
+    if ds is not None:
+        ds.today_cost_cny = ds_usage["today_cost_cny"]
+        ds.today_cache_pct = ds_usage["today_cache_pct"]
+        ds.today_label = ds_usage["today_label"]
+        ds.month_tokens = ds_usage["month_tokens"]
+        ds.month_cost_cny = ds_usage["month_cost_cny"]
+        ds.month_cache_pct = ds_usage["month_cache_pct"]
+    claude = ClaudeUsage(
+        weekly=empty, today=empty, month=empty, lifetime=empty
+    )
     return UsageReport(
         updated_at=datetime.now(timezone.utc),
         claude=claude,
-        other=others,
+        other=[],
         weather=fetch_weather(),
-        deepseek=fetch_deepseek(ds_today),
+        deepseek=ds,
     )
 
 
@@ -131,9 +243,12 @@ def _mock_report() -> UsageReport:
                 lifetime=Bucket(tokens_used=5_200_000, cost_usd=11.90),
             ),
         ],
-        weather=Weather(temp_c=24.3, code=2, condition="Partly", icon="partly", city="SHENZHEN"),
+        weather=Weather(temp_c=24.3, code=2, condition="Partly", icon="partly", city="Shanghai"),
         deepseek=DeepSeek(balance=70.79, currency="CNY", granted=0.0, topped=70.79,
-                          today_tokens=2_400_000, available=True),
+                          today_tokens=2_400_000, today_cost_cny=5.42, today_cache_pct=96.8,
+                          month_tokens=18_000_000, month_cost_cny=38.15, month_cache_pct=95.2,
+                          today_label="TODAY",
+                          available=True),
     )
 
 

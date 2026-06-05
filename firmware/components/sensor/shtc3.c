@@ -10,7 +10,6 @@
 #define SCL_PIN 14
 #define SHTC3_ADDR 0x70
 
-static const char *TAG = "shtc3";
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_dev;
 

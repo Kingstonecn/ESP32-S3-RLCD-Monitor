@@ -3,6 +3,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_netif.h>
 
 #include "user_app.h"
 #include "wifi_app.h"
@@ -20,7 +21,7 @@ typedef struct {
     int  poll_sec;
 } poll_cfg_t;
 
-// Clock + indoor sensor: cheap, update every 10s independent of the HTTP poll.
+// Clock + indoor sensor + WiFi status: cheap, update every 10s.
 static void clock_task(void *arg)
 {
     (void) arg;
@@ -29,9 +30,15 @@ static void clock_task(void *arg)
         ntp_now_hm(hm, sizeof(hm));
         float t = 0, h = 0;
         bool ok = (shtc3_read(&t, &h) == ESP_OK);
+        bool wifi_up = false;
+        esp_netif_t *n = esp_netif_get_handle_from_ifkey("STA_DEF");
+        if (n) wifi_up = esp_netif_is_netif_up(n);
         if (Lvgl_lock(-1)) {
             ui_app_set_time(hm);
             ui_app_set_env(t, h, ok);
+            ui_app_set_wifi(wifi_up);
+            // Battery: RLCD is USB-powered, pass -1 to hide
+            ui_app_set_battery(-1, false);
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(10000));
@@ -45,8 +52,22 @@ static void usage_poll_task(void *arg)
         usage_report_t rep;
         esp_err_t err = usage_client_fetch(cfg->url, cfg->token, &rep);
         if (Lvgl_lock(-1)) {
-            if (err == ESP_OK) ui_app_update(&rep);
-            else { ESP_LOGW(TAG, "fetch failed: %s", esp_err_to_name(err)); ui_app_mark_stale(); }
+            if (err == ESP_OK) {
+                ui_app_update(&rep);
+                // Update weather description in header line 1
+                if (rep.weather.valid && rep.weather.condition[0]) {
+                    ui_app_set_weather_desc(rep.weather.condition);
+                }
+                // Update env line with forecast temp from bridge
+                if (rep.weather.valid) {
+                    float t = 0, h = 0;
+                    shtc3_read(&t, &h);  // best-effort
+                    // ui_app_set_env will rebuild the string
+                }
+            } else {
+                ESP_LOGW(TAG, "fetch failed: %s", esp_err_to_name(err));
+                ui_app_mark_stale();
+            }
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(cfg->poll_sec * 1000));

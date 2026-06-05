@@ -74,6 +74,12 @@ class DeepSeek(BaseModel):
     granted: Optional[float] = None
     topped: Optional[float] = None
     today_tokens: int = 0        # deepseek-model tokens today (via ccusage)
+    today_cost_cny: float = 0.0  # today's cost in CNY
+    today_cache_pct: float = 0.0 # today's cache hit rate 0-100
+    today_label: str = "TODAY"   # "TODAY" or "YESTERDAY" when fallback
+    month_tokens: int = 0        # this month's tokens
+    month_cost_cny: float = 0.0  # this month's cost in CNY
+    month_cache_pct: float = 0.0 # this month's cache hit rate 0-100
     available: bool = False
 
 
