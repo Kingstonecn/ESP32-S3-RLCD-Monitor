@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_pm.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
@@ -51,5 +52,22 @@ esp_err_t wifi_app_connect_blocking(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     xEventGroupWaitBits(s_evt, BIT_CONNECTED, pdFALSE, pdTRUE, portMAX_DELAY);
+
+    // Enable Modem Sleep: radio sleeps between DTIM beacons, saves ~50-70mA
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+    ESP_LOGI(TAG, "Modem Sleep enabled (WIFI_PS_MIN_MODEM)");
+
+    // Auto CPU freq scaling + light sleep when idle
+    esp_pm_config_t pm = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false,
+    };
+    esp_err_t pm_err = esp_pm_configure(&pm);
+    if (pm_err == ESP_OK) {
+        ESP_LOGI(TAG, "PM: freq 80-240MHz, light sleep on");
+    } else {
+        ESP_LOGW(TAG, "PM failed (%s), light sleep unavailable", esp_err_to_name(pm_err));
+    }
     return ESP_OK;
 }

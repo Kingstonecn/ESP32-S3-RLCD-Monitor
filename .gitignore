@@ -30,3 +30,10 @@ ESP32-S3-RLCD-4.2-Demo.zip
 
 # Uploaded photos / scratch
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.jpg
+
+# Generated font test files
+firmware/components/ui_app/font_cn_*.c
+firmware/components/ui_app/font_test.c
+
+# Bridge logs
+bridge/bridge.log

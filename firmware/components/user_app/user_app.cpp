@@ -25,11 +25,14 @@ typedef struct {
 static void clock_task(void *arg)
 {
     (void) arg;
+    float last_t = 0, last_h = 0;
     for (;;) {
         char hm[8];
         ntp_now_hm(hm, sizeof(hm));
         float t = 0, h = 0;
         bool ok = (shtc3_read(&t, &h) == ESP_OK);
+        if (ok) { last_t = t; last_h = h; }
+        else    { t = last_t; h = last_h; }
         bool wifi_up = false;
         esp_netif_t *n = esp_netif_get_handle_from_ifkey("STA_DEF");
         if (n) wifi_up = esp_netif_is_netif_up(n);
@@ -37,7 +40,7 @@ static void clock_task(void *arg)
             ui_app_set_time(hm);
             ui_app_set_env(t, h, ok);
             ui_app_set_wifi(wifi_up);
-            // Battery: RLCD is USB-powered, pass -1 to hide
+            // Show battery icon and percentage for debugging
             ui_app_set_battery(-1, false);
             Lvgl_unlock();
         }

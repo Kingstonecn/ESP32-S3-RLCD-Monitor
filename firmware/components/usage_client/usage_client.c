@@ -155,6 +155,10 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         const cJSON *ic = cJSON_GetObjectItemCaseSensitive(w, "icon");
         const cJSON *cy = cJSON_GetObjectItemCaseSensitive(w, "city");
         out->weather.temp_c = cJSON_IsNumber(t) ? t->valuedouble : 0.0;
+        const cJSON *tmin = cJSON_GetObjectItemCaseSensitive(w, "temp_min");
+        const cJSON *tmax = cJSON_GetObjectItemCaseSensitive(w, "temp_max");
+        out->weather.temp_min = cJSON_IsNumber(tmin) ? tmin->valuedouble : -99.0;
+        out->weather.temp_max = cJSON_IsNumber(tmax) ? tmax->valuedouble : -99.0;
         if (cJSON_IsString(cd)) strncpy(out->weather.condition, cd->valuestring, sizeof(out->weather.condition) - 1);
         if (cJSON_IsString(ic)) strncpy(out->weather.icon,      ic->valuestring, sizeof(out->weather.icon) - 1);
         if (cJSON_IsString(cy)) strncpy(out->weather.city,      cy->valuestring, sizeof(out->weather.city) - 1);

@@ -39,6 +39,8 @@ typedef struct {
 
 typedef struct {
     double  temp_c;
+    double  temp_min;
+    double  temp_max;
     int32_t code;
     char    condition[16];
     char    icon[10];       // clear/partly/cloud/rain/snow/fog

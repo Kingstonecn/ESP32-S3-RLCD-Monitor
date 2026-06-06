@@ -70,6 +70,7 @@ def _fetch_ds_usage() -> dict:
                 [os.path.join(nodejs, "node.exe"), npx_js,
                  "-y", "ccusage@latest", "claude", "daily", "--json"],
                 capture_output=True, text=True, timeout=30, env=env,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         if proc.returncode != 0:
             return default
@@ -243,7 +244,7 @@ def _mock_report() -> UsageReport:
                 lifetime=Bucket(tokens_used=5_200_000, cost_usd=11.90),
             ),
         ],
-        weather=Weather(temp_c=24.3, code=2, condition="Partly", icon="partly", city="Shanghai"),
+        weather=Weather(temp_c=24.3, temp_min=22.0, temp_max=30.0, code=2, condition="Partly", icon="partly", city="Shanghai"),
         deepseek=DeepSeek(balance=70.79, currency="CNY", granted=0.0, topped=70.79,
                           today_tokens=2_400_000, today_cost_cny=5.42, today_cache_pct=96.8,
                           month_tokens=18_000_000, month_cost_cny=38.15, month_cache_pct=95.2,

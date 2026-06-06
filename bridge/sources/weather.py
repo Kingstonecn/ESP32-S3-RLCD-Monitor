@@ -98,7 +98,7 @@ def _fetch_caiyun() -> Weather | None:
 def _fetch_openmeteo() -> Weather | None:
     url = (
         f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}"
-        "&current=temperature_2m,weather_code,cloud_cover,precipitation&timezone=Asia/Shanghai"
+        "&current=temperature_2m,weather_code,cloud_cover,precipitation&daily=temperature_2m_max,temperature_2m_min&timezone=Asia/Shanghai"
     )
     try:
         with urllib.request.urlopen(url, timeout=10) as r:
@@ -108,8 +108,13 @@ def _fetch_openmeteo() -> Weather | None:
         cloud  = float(cur.get("cloud_cover") or 0)
         precip = float(cur.get("precipitation") or 0)
         label, icon = _openmeteo_condition(code, cloud, precip)
+        daily = d.get("daily", {})
+        t_min = round(float(daily["temperature_2m_min"][0]), 1) if daily.get("temperature_2m_min") else None
+        t_max = round(float(daily["temperature_2m_max"][0]), 1) if daily.get("temperature_2m_max") else None
         return Weather(
             temp_c=round(float(cur["temperature_2m"]), 1),
+            temp_min=t_min,
+            temp_max=t_max,
             code=code,
             condition=label,
             icon=icon,

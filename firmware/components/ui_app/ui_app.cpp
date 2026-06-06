@@ -29,6 +29,7 @@ static lv_obj_t *ds_val[6];   // [today-tok, today-cost, today-cch, month-tok, m
 
 static bool have_data;
 static float _fc_temp = -99.0f;  // last forecast temp from bridge
+static float _fc_min = -99.0f, _fc_max = -99.0f;
 
 static void fmt_tok(char *o, size_t n, int64_t t)
 {
@@ -95,9 +96,9 @@ void ui_app_init(void)
 
     // ---- header line 1: time+weather | WiFi battery ----
     lbl_time_weather = mklabel(s, 10, 4, &lv_font_montserrat_28, "--:--");
-    img_wifi   = mkrawicon(s, 318, 8, &icon_wifi);
-    img_battery = mkrawicon(s, 342, 10, &icon_bat_full);
-    lbl_bat_pct = mkalign(s, 370, 10, 30, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
+    img_wifi   = mkrawicon(s, 372, 4, &icon_wifi);
+    img_battery = mkrawicon(s, 344, 4, &icon_bat_full);
+    lbl_bat_pct = mkalign(s, 310, 8, 30, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
 
     // ---- header line 2: FC / IN / RH ----
     lbl_env = mklabel(s, 10, 44, &lv_font_montserrat_14,
@@ -108,7 +109,7 @@ void ui_app_init(void)
     // ---- centered brand: icon + title + balance + ¥ ----
     mkicon(s, 120, 84, &icon_deepseek);
     mklabel(s, 160, 88, &lv_font_montserrat_20, "DEEPSEEK");
-    mkalign(s, 100, 120, 200, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_20, "balance");
+    mkalign(s, 100, 118, 200, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_20, "balance");
     lbl_ds_bal = mkalign(s, 100, 152, 200, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
 
     mkdiv(s, 10, 190, 380, 1);
@@ -129,7 +130,7 @@ void ui_app_init(void)
 void ui_app_update(const usage_report_t *r)
 {
     if (!r) return;
-    char tk[16], b[40];
+    char tk[24], b[40];
 
     if (r->deepseek.valid) {
         snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);
@@ -165,8 +166,13 @@ void ui_app_update(const usage_report_t *r)
 
     if (r->weather.valid) {
         _fc_temp = r->weather.temp_c;
+        _fc_min = r->weather.temp_min;
+        _fc_max = r->weather.temp_max;
         char b[64];
-        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
+        if (_fc_min > -50.0f && _fc_max > -50.0f)
+            snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN -- / RH --%%", _fc_min, _fc_max);
+        else
+            snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
         lv_label_set_text(lbl_env, b);
     }
 }
@@ -174,7 +180,12 @@ void ui_app_update(const usage_report_t *r)
 void ui_app_set_env(float temp_c, float humidity, bool ok)
 {
     char b[64];
-    if (_fc_temp > -50.0f && ok)
+    if (_fc_min > -50.0f && _fc_max > -50.0f && ok)
+        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
+                 _fc_min, _fc_max, temp_c, humidity);
+    else if (_fc_min > -50.0f && _fc_max > -50.0f)
+        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN -- / RH --%%", _fc_min, _fc_max);
+    else if (_fc_temp > -50.0f && ok)
         snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
                  _fc_temp, temp_c, humidity);
     else if (_fc_temp > -50.0f)

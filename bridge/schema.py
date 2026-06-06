@@ -62,6 +62,8 @@ class OtherAgentUsage(BaseModel):
 
 class Weather(BaseModel):
     temp_c: Optional[float] = None
+    temp_min: Optional[float] = None
+    temp_max: Optional[float] = None
     code: Optional[int] = None
     condition: str = ""          # short English label, e.g. "Cloudy"
     icon: str = ""               # one of: clear/partly/cloud/rain/snow/fog

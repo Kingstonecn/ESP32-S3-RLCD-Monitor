@@ -1,0 +1,68 @@
+D:\CCWorkspace\ESP32-S3-RLCD-Monitor\bridge\bridge.py:256: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Started server process [16088]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7777 (Press CTRL+C to quit)
+INFO:     192.168.0.120:51834 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49403 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49404 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49405 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49406 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49407 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49408 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49409 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49410 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49411 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49412 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49413 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49414 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49415 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49416 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49417 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49505 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49506 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49507 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49508 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49509 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49510 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49511 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49512 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49513 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49514 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49515 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49516 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49517 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49518 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49519 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49520 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49521 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49522 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49523 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49524 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49525 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49526 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49527 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49528 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49529 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49533 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:49534 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:65047 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:65048 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:65049 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:55296 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:55297 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50944 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50945 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50946 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50947 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50948 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:50949 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:59437 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:59438 - "GET /api/usage HTTP/1.1" 200 OK
+INFO:     192.168.0.120:59439 - "GET /api/usage HTTP/1.1" 200 OK
