@@ -250,8 +250,8 @@ void ui_app_set_battery(int level, bool charging)
     lv_obj_remove_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
     const void *src = &icon_bat_full;
     if (charging)        src = &icon_bat_chg;
-    else if (level < 20) src = &icon_bat_low;
-    else if (level < 60) src = &icon_bat_med;
+    else if (level < 30) src = &icon_bat_low;
+    else if (level < 70) src = &icon_bat_med;
     lv_image_set_src(img_battery, src);
 
     if (lbl_bat_pct) {
