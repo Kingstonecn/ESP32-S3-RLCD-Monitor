@@ -68,13 +68,27 @@ static bool battery_adc_init(void)
 /**
  * Convert 18650 Li-Ion voltage to approximate percentage.
  * Piecewise-linear fit to typical Li-Ion discharge curve.
+ *
+ * Reference points (typical 18650):
+ *   4.10V+  100%  (empirically calibrated)
+ *   4.00V    80%
+ *   3.90V    60%
+ *   3.80V    40%
+ *   3.70V    25%
+ *   3.60V    12%
+ *   3.40V     0%  (cutoff)
+ *
+ * Calibrated empirically: full charge reads ~4.105V on ADC → 4.10V → 100%.
  */
 static int voltage_to_pct(float volt)
 {
-    if (volt >= 4.2f) return 100;
-    if (volt >= 4.0f) return 50 + (int)((volt - 4.0f) / 0.2f * 50.0f);
-    if (volt >= 3.6f) return 15 + (int)((volt - 3.6f) / 0.4f * 35.0f);
-    if (volt >= 3.0f) return (int)((volt - 3.0f) / 0.6f * 15.0f);
+    if (volt >= 4.10f) return 100;
+    if (volt >= 4.00f) return 80 + (int)((volt - 4.00f) / 0.10f * 20.0f);  // 80-100
+    if (volt >= 3.90f) return 60 + (int)((volt - 3.90f) / 0.10f * 20.0f);  // 60-80
+    if (volt >= 3.80f) return 40 + (int)((volt - 3.80f) / 0.10f * 20.0f);  // 40-60
+    if (volt >= 3.70f) return 25 + (int)((volt - 3.70f) / 0.10f * 15.0f);  // 25-40
+    if (volt >= 3.60f) return 12 + (int)((volt - 3.60f) / 0.10f * 13.0f);  // 12-25
+    if (volt >= 3.40f) return (int)((volt - 3.40f) / 0.20f * 12.0f);       //  0-12
     return 0;
 }
 
@@ -101,7 +115,7 @@ static int battery_read_pct(void)
     }
     int bat_mv = (int)((float)pin_mv * BATTERY_VOLT_DIV);
     float v = bat_mv / 1000.0f;
-    ESP_LOGD(TAG, "battery: raw=%d pin=%dmV bat=%.2fV", raw, pin_mv, v);
+    ESP_LOGI(TAG, "battery: raw=%d pin=%dmV bat=%.2fV", raw, pin_mv, v);
 
     // < 2.5V → no battery connected (pulldown to GND via voltage divider)
     if (v < 2.5f) {
@@ -135,7 +149,6 @@ static void clock_task(void *arg)
             ui_app_set_time(hm);
             ui_app_set_env(t, h, ok);
             ui_app_set_wifi(wifi_up);
-            ui_app_set_battery(battery_read_pct(), false);
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(10000));
@@ -165,6 +178,7 @@ static void usage_poll_task(void *arg)
                 ESP_LOGW(TAG, "fetch failed: %s", esp_err_to_name(err));
                 ui_app_mark_stale();
             }
+            ui_app_set_battery(battery_read_pct(), false);
             Lvgl_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(cfg->poll_sec * 1000));

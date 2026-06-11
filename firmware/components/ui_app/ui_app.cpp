@@ -98,7 +98,7 @@ void ui_app_init(void)
     lbl_time_weather = mklabel(s, 10, 4, &lv_font_montserrat_28, "--:--");
     img_wifi   = mkrawicon(s, 372, 4, &icon_wifi);
     img_battery = mkrawicon(s, 344, 4, &icon_bat_full);
-    lbl_bat_pct = mkalign(s, 310, 8, 30, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
+    lbl_bat_pct = mkalign(s, 300, 8, 40, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
 
     // ---- header line 2: FC / IN / RH ----
     lbl_env = mklabel(s, 10, 44, &lv_font_montserrat_14,
