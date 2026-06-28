@@ -51,17 +51,34 @@ esp_err_t wifi_app_connect_blocking(const char *ssid, const char *password)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    xEventGroupWaitBits(s_evt, BIT_CONNECTED, pdFALSE, pdTRUE, portMAX_DELAY);
+    // Wait (bounded) for an IP. We must NOT block forever here: a weak signal or
+    // a flaky DHCP server can leave GOT_IP pending indefinitely, which would
+    // freeze the whole app on the boot placeholder screen (clock never ticks).
+    // On timeout we return ESP_ERR_TIMEOUT so callers can still start the
+    // clock/sensor/poll tasks; the wifi event handler keeps retrying connects
+    // and the poll task will succeed once the link eventually comes up.
+    const int WIFI_CONNECT_TIMEOUT_MS = 20000;
+    EventBits_t bits = xEventGroupWaitBits(s_evt, BIT_CONNECTED, pdFALSE, pdTRUE,
+                                           pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
+    if (!(bits & BIT_CONNECTED)) {
+        ESP_LOGW(TAG, "no IP within %dms; continuing without link (will auto-retry)",
+                 WIFI_CONNECT_TIMEOUT_MS);
+        return ESP_ERR_TIMEOUT;
+    }
 
     // Enable Modem Sleep: radio sleeps between DTIM beacons, saves ~50-70mA
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
     ESP_LOGI(TAG, "Modem Sleep enabled (WIFI_PS_MIN_MODEM)");
 
-    // Auto CPU freq scaling + light sleep when idle
+    // Auto CPU freq scaling + light sleep when idle.
+    // sdkconfig has CONFIG_FREERTOS_USE_TICKLESS_IDLE=y and CONFIG_PM_ENABLE=y,
+    // so light_sleep_enable=true lets the idle task actually enter light sleep
+    // (CPU + radio pause) between events. This is the single biggest static
+    // current lever; the modem-sleep-only path stays awake at reduced clock.
     esp_pm_config_t pm = {
         .max_freq_mhz = 240,
         .min_freq_mhz = 80,
-        .light_sleep_enable = false,
+        .light_sleep_enable = true,
     };
     esp_err_t pm_err = esp_pm_configure(&pm);
     if (pm_err == ESP_OK) {

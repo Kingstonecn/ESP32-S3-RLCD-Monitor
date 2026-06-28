@@ -195,6 +195,26 @@ esp_err_t usage_client_fetch(const char *url, const char *token, usage_report_t 
         out->deepseek.valid = cJSON_IsNumber(bal);
     }
 
+    // opencode_go (top-level)
+    const cJSON *oc = cJSON_GetObjectItemCaseSensitive(root, "opencode_go");
+    if (cJSON_IsObject(oc)) {
+        #define _PARSE_WIN(prefix, cjson_key) \
+            do { \
+                const cJSON *w = cJSON_GetObjectItemCaseSensitive(oc, cjson_key); \
+                if (cJSON_IsObject(w)) { \
+                    out->opencode.prefix##_pct = (int32_t)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(w, "usage_pct")); \
+                    out->opencode.prefix##_reset_min = (int32_t)cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(w, "reset_min")); \
+                    const cJSON *s = cJSON_GetObjectItemCaseSensitive(w, "status"); \
+                    if (cJSON_IsString(s)) strncpy(out->opencode.prefix##_status, s->valuestring, sizeof(out->opencode.prefix##_status)-1); \
+                } \
+            } while(0)
+        _PARSE_WIN(rolling, "rolling");
+        _PARSE_WIN(weekly,  "weekly");
+        _PARSE_WIN(monthly, "monthly");
+        #undef _PARSE_WIN
+        out->opencode.valid = true;
+    }
+
     cJSON_Delete(root);
     return ESP_OK;
 }

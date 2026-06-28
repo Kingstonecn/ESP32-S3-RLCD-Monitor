@@ -13,6 +13,12 @@ import threading
 import time
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
+
+from dotenv import load_dotenv
+# Auto-load .env from the same directory as bridge.py.
+# override=True ensures .env always wins over system-level env vars.
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -24,12 +30,14 @@ from schema import (
     ClaudeUsage,
     DeepSeek,
     ModelBreakdown,
+    OpenCodeGo,
     OtherAgentUsage,
     UsageReport,
     Weather,
 )
 from sources.weather import fetch_weather
 from sources.deepseek import fetch_deepseek
+from sources.opencode import fetch_opencode_go
 
 
 REFRESH_INTERVAL_SEC = int(os.environ.get("RLCD_REFRESH_SEC", "45"))
@@ -46,9 +54,12 @@ USD_CNY = float(os.environ.get("RLCD_USD_CNY", "7.25"))  # USD→CNY rate
 
 
 def _fetch_ds_usage() -> dict:
-    """Run ccusage daily, return dict with today/month DeepSeek usage stats."""
+    """Run ccusage daily, return dict with today/month DeepSeek usage stats.
+    Uses UTC (timezone.utc) to compute today/month boundaries so the
+    dashboard aligns with DeepSeek's own billing page (which also uses UTC).
+    """
     import json, os, subprocess
-    from datetime import datetime
+    from datetime import datetime, timezone
     nodejs = r"C:\Program Files\nodejs"
     npx_js = os.path.join(nodejs, "node_modules", "npm", "bin", "npx-cli.js")
     env = os.environ.copy()
@@ -75,8 +86,10 @@ def _fetch_ds_usage() -> dict:
         if proc.returncode != 0:
             return default
         data = json.loads(proc.stdout)
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        month_str = datetime.now().strftime("%Y-%m")
+        # UTC dates for today/month boundaries
+        utc_now = datetime.now(timezone.utc)
+        today_str = utc_now.strftime("%Y-%m-%d")
+        month_str = utc_now.strftime("%Y-%m")
 
         def _sum_model(entries, date_filter):
             inp = out = cr = cc = cost = 0
@@ -90,25 +103,52 @@ def _fetch_ds_usage() -> dict:
                     out += int(mb.get("outputTokens", 0) or 0)
                     cr += int(mb.get("cacheReadTokens", 0) or 0)
                     cc += int(mb.get("cacheCreationTokens", 0) or 0)
-                    cost += float(mb.get("cost", 0) or 0)
             total = inp + out + cr + cc
+            # Recompute CNY cost using DeepSeek's own pricing table
+            #   flash: cache_hit=0.02, miss=1.00, out=2.00  (per 1M tok)
+            #   pro:   cache_hit=0.025, miss=3.00, out=6.00
+            flash_miss = flash_hit = flash_out = 0
+            pro_miss = pro_hit = pro_out = 0
+            for e in entries:
+                if e.get("date", "") != date_filter:
+                    continue
+                for mb in e.get("modelBreakdowns", []):
+                    if "deepseek" not in (mb.get("modelName") or "").lower():
+                        continue
+                    is_pro = "pro" in (mb.get("modelName") or "").lower()
+                    i = int(mb.get("inputTokens", 0) or 0)
+                    c = int(mb.get("cacheReadTokens", 0) or 0)
+                    o = int(mb.get("outputTokens", 0) or 0)
+                    if is_pro:
+                        pro_miss += i; pro_hit += c; pro_out += o
+                    else:
+                        flash_miss += i; flash_hit += c; flash_out += o
+            cost_cny = (
+                flash_miss / 1e6 * 1.00 + flash_hit / 1e6 * 0.02 + flash_out / 1e6 * 2.00 +
+                pro_miss   / 1e6 * 3.00 + pro_hit   / 1e6 * 0.025 + pro_out   / 1e6 * 6.00
+            )
             cache_pct = (cr / (inp + cr + cc) * 100) if (inp + cr + cc) > 0 else 0.0
-            return total, cost * USD_CNY, cache_pct
+            return total, round(cost_cny * 1.02, 2), cache_pct
 
         today_tok, today_cny, today_cache = _sum_model(data.get("daily", []), today_str)
 
-        # If today is 0, fall back to yesterday's data
-        if today_tok == 0:
-            from datetime import timedelta
-            yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            y_tok, y_cny, y_cache = _sum_model(data.get("daily", []), yesterday_str)
-            if y_tok > 0:
-                today_tok, today_cny, today_cache = y_tok, y_cny, y_cache
-                _yesterday_label = "YESTERDAY"
-            else:
-                _yesterday_label = "TODAY"
-        else:
-            _yesterday_label = "TODAY"
+        # ccusage tags entries by local time (UTC+8). If UTC today != local
+        # today (which happens during 08:00-16:00 UTC, i.e. 16:00-00:00 CST),
+        # also include the entry tagged with the local date so data split
+        # across the UTC boundary is not lost.
+        from datetime import timedelta
+        local_today_str = (utc_now + timedelta(hours=8)).strftime("%Y-%m-%d")
+        if local_today_str != today_str:
+            lt_tok, lt_cny, lt_cache = _sum_model(data.get("daily", []), local_today_str)
+            if lt_tok > 0:
+                today_tok += lt_tok
+                today_cny += lt_cny
+                # recalc cache rate for combined set (weighted average)
+                if today_tok > 0 and lt_tok > 0:
+                    today_cache = (today_cache * (today_tok - lt_tok) + lt_cache * lt_tok) / today_tok
+
+        # No yesterday fallback — zero today means no usage, show it as-is.
+        _yesterday_label = "TODAY"
 
         # Month: sum all entries where date starts with month_str
         month_tok = month_cny = month_cache_numer = month_cache_denom = 0
@@ -118,7 +158,6 @@ def _fetch_ds_usage() -> dict:
             mt, mc, mcp = _sum_model([e], e["date"])
             month_tok += mt
             month_cny += mc
-            # Recompute cache rate across all month entries
         # Rebuild month cache rate properly
         month_inp = month_out = month_cr = month_cc = 0
         for e in data.get("daily", []):
@@ -167,6 +206,7 @@ def _build_live_report() -> UsageReport:
         other=[],
         weather=fetch_weather(),
         deepseek=ds,
+        opencode_go=fetch_opencode_go(),
     )
 
 

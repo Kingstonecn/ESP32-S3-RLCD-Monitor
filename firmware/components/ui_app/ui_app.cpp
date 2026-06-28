@@ -19,17 +19,55 @@ static lv_obj_t *lbl_env;            // "FC 21°C / IN 26.3°C / RH 65%" (14px)
 static lv_obj_t *img_wifi;
 static lv_obj_t *img_battery;
 static lv_obj_t *lbl_bat_pct;        // "85%"
+static lv_obj_t *lbl_bat_remain;      // "12h"
 
 // DeepSeek centered brand
-static lv_obj_t *lbl_ds_bal;         // ¥ amount (bal28)
+static lv_obj_t *img_brand;        // brand icon (deepseek)
+static lv_obj_t *lbl_brand_title;  // "DEEPSEEK" / "OPENCODE"
+static lv_obj_t *lbl_bal_label;    // "balance" / "Go Plan"
+static lv_obj_t *lbl_ds_bal;       // ¥ amount (bal28)
 
 // Usage columns
 static lv_obj_t *ds_hdr[2];   // "TODAY", "MONTH"
 static lv_obj_t *ds_val[6];   // [today-tok, today-cost, today-cch, month-tok, month-cost, month-cch]
 
+// OpenCode bars (share the same screen area, toggled via hide/show)
+static lv_obj_t *oc_bar[3];       // 5h / weekly / monthly bars
+static lv_obj_t *oc_lbl_pct[3];   // "0%" .. "100%"
+static lv_obj_t *oc_lbl_info[3];  // status + reset info
+static lv_obj_t *oc_lbl_tag[3];   // "5h" / "WEEK" / "MONTH"
+static lv_obj_t *oc_div;          // separator under brand (hidden in OC mode)
+
 static bool have_data;
+static int tracking_mode = 0;          // 0=DeepSeek, 1=OpenCode
+
+// Cache the last successful report so toggling mode re-renders instantly
+// instead of waiting for the next HTTP poll (up to 300s).
+static usage_report_t s_last;
+static bool s_have_last = false;
+
 static float _fc_temp = -99.0f;  // last forecast temp from bridge
 static float _fc_min = -99.0f, _fc_max = -99.0f;
+static float _last_in_temp = -99.0f, _last_in_hum = -99.0f;  // last SHTC3 indoor values
+static bool _last_in_ok = false;
+
+static void _rebuild_env(void)
+{
+    char b[64];
+    bool fc_ok = (_fc_max > -50.0f);
+    bool in_ok = _last_in_ok;
+    if (fc_ok && in_ok)
+        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
+                 _fc_min, _fc_max, _last_in_temp, _last_in_hum);
+    else if (fc_ok)
+        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN -- / RH --%%", _fc_min, _fc_max);
+    else if (in_ok)
+        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
+                 _last_in_temp, _last_in_hum);
+    else
+        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN -- / RH --%%");
+    lv_label_set_text(lbl_env, b);
+}
 
 static void fmt_tok(char *o, size_t n, int64_t t)
 {
@@ -71,6 +109,22 @@ static void mkdiv(lv_obj_t *p, int x, int y, int w, int h)
     lv_obj_set_style_bg_color(d, INK, 0);
     lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
 }
+static lv_obj_t *mkbar(lv_obj_t *p, int x, int y, int w)
+{
+    lv_obj_t *b = lv_bar_create(p);
+    lv_obj_set_pos(b, x, y);
+    lv_obj_set_size(b, w, 13);
+    lv_bar_set_range(b, 0, 100);
+    lv_obj_set_style_radius(b, 6, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b, WHITE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(b, INK, LV_PART_MAIN);
+    lv_obj_set_style_border_width(b, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(b, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(b, INK, LV_PART_INDICATOR);
+    lv_bar_set_value(b, 0, LV_ANIM_OFF);
+    return b;
+}
 static lv_obj_t *mkicon(lv_obj_t *p, int x, int y, const lv_image_dsc_t *src)
 {
     lv_obj_t *im = lv_image_create(p);
@@ -99,6 +153,7 @@ void ui_app_init(void)
     img_wifi   = mkrawicon(s, 372, 4, &icon_wifi);
     img_battery = mkrawicon(s, 344, 4, &icon_bat_full);
     lbl_bat_pct = mkalign(s, 300, 8, 40, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
+    lbl_bat_remain = mkalign(s, 248, 8, 48, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--");
 
     // ---- header line 2: FC / IN / RH ----
     lbl_env = mklabel(s, 10, 44, &lv_font_montserrat_14,
@@ -106,13 +161,19 @@ void ui_app_init(void)
 
     mkdiv(s, 10, 66, 380, 2);
 
-    // ---- centered brand: icon + title + balance + ¥ ----
-    mkicon(s, 120, 84, &icon_deepseek);
-    mklabel(s, 160, 88, &lv_font_montserrat_20, "DEEPSEEK");
-    mkalign(s, 100, 118, 200, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_20, "balance");
+    // ---- centered brand: icon + title + ----
+    img_brand = mkicon(s, 120, 84, &icon_deepseek);
+    lbl_brand_title = mklabel(s, 160, 88, &lv_font_montserrat_20, "DEEPSEEK");
+    lbl_bal_label = mkalign(s, 100, 118, 200, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_20, "balance");
     lbl_ds_bal = mkalign(s, 100, 152, 200, LV_TEXT_ALIGN_CENTER, &font_bal28, "\xC2\xA5""0.00");
 
-    mkdiv(s, 10, 190, 380, 1);
+    oc_div = lv_obj_create(s);
+    lv_obj_remove_style_all(oc_div);
+    lv_obj_set_pos(oc_div, 10, 190);
+    lv_obj_set_size(oc_div, 380, 1);
+    lv_obj_set_style_bg_color(oc_div, INK, 0);
+    lv_obj_set_style_bg_opa(oc_div, LV_OPA_COVER, 0);
+    lv_obj_add_flag(oc_div, LV_OBJ_FLAG_HIDDEN); // hidden; DeepSeek branch shows it
 
     // ---- usage: two-column (TODAY | MONTH) ----
     ds_hdr[0] = mkalign(s, 20, 200, 170, LV_TEXT_ALIGN_CENTER, &lv_font_montserrat_14, "TODAY");
@@ -124,6 +185,25 @@ void ui_app_init(void)
         ds_val[i*3+2] = mkalign(s, bx, 274, 170, LV_TEXT_ALIGN_CENTER, &font_amt14, "-");  // cache
     }
 
+    // ---- OpenCode bars (5h / weekly / monthly) ----
+    // Each row: label left | bar | pct right | info
+    // No separator divider — bars sit directly below "Go Plan".
+    const char *oc_label[3] = {"5 HOUR", "WEEK", "MONTH"};
+    int oc_ybase = 176;
+    int oc_row_h = 36;
+    for (int i = 0; i < 3; ++i) {
+        int row_y = oc_ybase + i * oc_row_h;
+        oc_lbl_tag[i] = mklabel(s, 17, row_y, &lv_font_montserrat_14, oc_label[i]);
+        oc_bar[i] = mkbar(s, 93, row_y, 120);
+        oc_lbl_pct[i] = mkalign(s, 219, row_y - 2, 40, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--%");
+        oc_lbl_info[i] = mkalign(s, 273, row_y, 120, LV_TEXT_ALIGN_LEFT, &font_amt14, "-");
+        // Start hidden; display_bsp init only creates them; update will show
+        lv_obj_add_flag(oc_bar[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(oc_lbl_pct[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(oc_lbl_info[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(oc_lbl_tag[i], LV_OBJ_FLAG_HIDDEN);
+    }
+
     have_data = false;
 }
 
@@ -132,34 +212,95 @@ void ui_app_update(const usage_report_t *r)
     if (!r) return;
     char tk[24], b[40];
 
-    if (r->deepseek.valid) {
-        snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);
-        lv_label_set_text(lbl_ds_bal, b);
+    if (tracking_mode == 0) {
+        /* ---- DeepSeek view (default) ---- */
+        // Restore DeepSeek column labels, hide OpenCode bars
+        lv_obj_clear_flag(ds_hdr[0], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(ds_hdr[1], LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < 6; ++i) lv_obj_clear_flag(ds_val[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(lbl_ds_bal, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(oc_div, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(lbl_bal_label, "balance");
+        for (int i = 0; i < 3; ++i) {
+            lv_obj_add_flag(oc_bar[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(oc_lbl_pct[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(oc_lbl_info[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(oc_lbl_tag[i], LV_OBJ_FLAG_HIDDEN);
+        }
 
-        // Only update usage data when tokens > 0 (real ccusage data)
-        bool has_usage = (r->deepseek.today_tokens > 0 || r->deepseek.month_tokens > 0);
-        if (has_usage) {
-            // Update column header: "TODAY" or "YESTERDAY"
-            lv_label_set_text(ds_hdr[0], r->deepseek.today_label);
+        if (r->deepseek.valid) {
+            snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.balance);
+            lv_label_set_text(lbl_ds_bal, b);
 
-            // today
-            fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
-            snprintf(b, sizeof(b), "%s tokens", tk);
-            lv_label_set_text(ds_val[0], b);
-            snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.today_cost_cny);
-            lv_label_set_text(ds_val[1], b);
-            if (r->deepseek.today_cache_pct >= 0)
-                { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.today_cache_pct); lv_label_set_text(ds_val[2], b); }
+            // Restore column headers (OpenCode view may have overwritten them)
+            lv_label_set_text(ds_hdr[0], "TODAY");
+            lv_label_set_text(ds_hdr[1], "MONTH");
 
-            // month
-            fmt_tok(tk, sizeof(tk), r->deepseek.month_tokens);
-            snprintf(b, sizeof(b), "%s tokens", tk);
-            lv_label_set_text(ds_val[3], b);
-            snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.month_cost_cny);
-            lv_label_set_text(ds_val[4], b);
-            if (r->deepseek.month_cache_pct >= 0)
-                { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.month_cache_pct); lv_label_set_text(ds_val[5], b); }
+            // Only update usage data when tokens > 0 (real ccusage data)
+            bool has_usage = (r->deepseek.today_tokens > 0 || r->deepseek.month_tokens > 0);
+            if (has_usage) {
+                // Update column header: "TODAY" or "YESTERDAY"
+                lv_label_set_text(ds_hdr[0], r->deepseek.today_label);
 
+                // today
+                fmt_tok(tk, sizeof(tk), r->deepseek.today_tokens);
+                snprintf(b, sizeof(b), "%s tokens", tk);
+                lv_label_set_text(ds_val[0], b);
+                snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.today_cost_cny);
+                lv_label_set_text(ds_val[1], b);
+                if (r->deepseek.today_cache_pct >= 0)
+                    { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.today_cache_pct); lv_label_set_text(ds_val[2], b); }
+
+                // month
+                fmt_tok(tk, sizeof(tk), r->deepseek.month_tokens);
+                snprintf(b, sizeof(b), "%s tokens", tk);
+                lv_label_set_text(ds_val[3], b);
+                snprintf(b, sizeof(b), "\xC2\xA5""%.2f", r->deepseek.month_cost_cny);
+                lv_label_set_text(ds_val[4], b);
+                if (r->deepseek.month_cache_pct >= 0)
+                    { snprintf(b, sizeof(b), "cache %.1f%%", r->deepseek.month_cache_pct); lv_label_set_text(ds_val[5], b); }
+
+                have_data = true;
+            }
+        }
+    } else {
+        /* ---- OpenCode Go view ---- */
+        if (r->opencode.valid) {
+            lv_label_set_text(lbl_bal_label, "Go Plan");
+            lv_obj_add_flag(lbl_ds_bal, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(oc_div, LV_OBJ_FLAG_HIDDEN);
+            // Hide DeepSeek column labels, show OpenCode bars
+            lv_obj_add_flag(ds_hdr[0], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ds_hdr[1], LV_OBJ_FLAG_HIDDEN);
+            for (int i = 0; i < 6; ++i) lv_obj_add_flag(ds_val[i], LV_OBJ_FLAG_HIDDEN);
+            for (int i = 0; i < 3; ++i) {
+                lv_obj_clear_flag(oc_bar[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(oc_lbl_pct[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(oc_lbl_info[i], LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(oc_lbl_tag[i], LV_OBJ_FLAG_HIDDEN);
+            }
+
+            // Fill in three bar rows
+            const struct { int32_t pct; int32_t reset_min; const char *status; } ocw[3] = {
+                {r->opencode.rolling_pct, r->opencode.rolling_reset_min, r->opencode.rolling_status},
+                {r->opencode.weekly_pct,  r->opencode.weekly_reset_min,  r->opencode.weekly_status},
+                {r->opencode.monthly_pct, r->opencode.monthly_reset_min, r->opencode.monthly_status},
+            };
+            for (int i = 0; i < 3; ++i) {
+                int pct = ocw[i].pct;
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                lv_bar_set_value(oc_bar[i], pct, LV_ANIM_OFF);
+                snprintf(b, sizeof(b), "%d%%", pct);
+                lv_label_set_text(oc_lbl_pct[i], b);
+                int m = ocw[i].reset_min;
+                if (m >= 1440) {
+                    snprintf(b, sizeof(b), "reset in %dd %dh", m / 1440, (m % 1440) / 60);
+                } else {
+                    snprintf(b, sizeof(b), "reset in %dh %02dm", m / 60, m % 60);
+                }
+                lv_label_set_text(oc_lbl_info[i], b);
+            }
             have_data = true;
         }
     }
@@ -168,33 +309,20 @@ void ui_app_update(const usage_report_t *r)
         _fc_temp = r->weather.temp_c;
         _fc_min = r->weather.temp_min;
         _fc_max = r->weather.temp_max;
-        char b[64];
-        if (_fc_min > -50.0f && _fc_max > -50.0f)
-            snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN -- / RH --%%", _fc_min, _fc_max);
-        else
-            snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
-        lv_label_set_text(lbl_env, b);
+        _rebuild_env();
     }
+
+    // stash for instant re-render on mode toggle
+    s_last = *r;
+    s_have_last = true;
 }
 
 void ui_app_set_env(float temp_c, float humidity, bool ok)
 {
-    char b[64];
-    if (_fc_min > -50.0f && _fc_max > -50.0f && ok)
-        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
-                 _fc_min, _fc_max, temp_c, humidity);
-    else if (_fc_min > -50.0f && _fc_max > -50.0f)
-        snprintf(b, sizeof(b), "FC %.0f-%.0f\xC2\xB0""C / IN -- / RH --%%", _fc_min, _fc_max);
-    else if (_fc_temp > -50.0f && ok)
-        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%",
-                 _fc_temp, temp_c, humidity);
-    else if (_fc_temp > -50.0f)
-        snprintf(b, sizeof(b), "FC %.0f\xC2\xB0""C / IN -- / RH --%%", _fc_temp);
-    else if (ok)
-        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN %.1f\xC2\xB0""C / RH %.0f%%", temp_c, humidity);
-    else
-        snprintf(b, sizeof(b), "FC --\xC2\xB0""C / IN -- / RH --%%");
-    lv_label_set_text(lbl_env, b);
+    _last_in_temp = ok ? temp_c : _last_in_temp;
+    _last_in_hum  = ok ? humidity : _last_in_hum;
+    _last_in_ok   = ok ? true : _last_in_ok;
+    _rebuild_env();
 }
 
 void ui_app_set_time(const char *hm)
@@ -245,6 +373,7 @@ void ui_app_set_battery(int level, bool charging)
     if (level < 0) {
         lv_obj_add_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
         if (lbl_bat_pct) lv_label_set_text(lbl_bat_pct, "");
+        if (lbl_bat_remain) lv_label_set_text(lbl_bat_remain, "");
         return;
     }
     lv_obj_remove_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
@@ -258,6 +387,32 @@ void ui_app_set_battery(int level, bool charging)
         char b[12];
         snprintf(b, sizeof(b), "%d%%", level);
         lv_label_set_text(lbl_bat_pct, b);
+    }
+}
+
+void ui_app_set_battery_remaining(const char *text)
+{
+    if (lbl_bat_remain) {
+        lv_label_set_text(lbl_bat_remain, text);
+    }
+}
+
+void ui_app_set_tracking_mode(int mode)
+{
+    if (tracking_mode == mode) return;
+    tracking_mode = mode;
+    lv_label_set_text(lbl_brand_title, mode == 0 ? "DEEPSEEK" : "OPENCODE");
+    if (mode == 0) {
+        lv_obj_clear_flag(img_brand, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(lbl_brand_title, 160, 88);
+    } else {
+        lv_obj_add_flag(img_brand, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(lbl_brand_title, 140, 88);
+    }
+    // Re-render the data area immediately from the cached report so the
+    // switch is instant – no need to wait for the next HTTP poll (300s).
+    if (s_have_last) {
+        ui_app_update(&s_last);
     }
 }
 

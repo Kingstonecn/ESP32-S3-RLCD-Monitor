@@ -85,6 +85,19 @@ class DeepSeek(BaseModel):
     available: bool = False
 
 
+class OpenCodeGoWindow(BaseModel):
+    """One quota window (e.g. rolling 5h)."""
+    usage_pct: int = 0           # 0-100
+    reset_min: int = 0           # minutes until reset
+    status: str = "ok"           # "ok" | "rate-limited"
+
+
+class OpenCodeGo(BaseModel):
+    rolling: OpenCodeGoWindow = Field(default_factory=OpenCodeGoWindow)
+    weekly: OpenCodeGoWindow = Field(default_factory=OpenCodeGoWindow)
+    monthly: OpenCodeGoWindow = Field(default_factory=OpenCodeGoWindow)
+
+
 class UsageReport(BaseModel):
     updated_at: datetime
     source: str = "ccusage"
@@ -92,3 +105,4 @@ class UsageReport(BaseModel):
     other: list[OtherAgentUsage] = Field(default_factory=list)
     weather: Optional[Weather] = None
     deepseek: Optional[DeepSeek] = None
+    opencode_go: Optional[OpenCodeGo] = None

@@ -64,6 +64,19 @@ typedef struct {
 } usage_deepseek_t;
 
 typedef struct {
+    int32_t rolling_pct;       // 0-100
+    int32_t rolling_reset_min; // minutes until reset
+    char    rolling_status[16];// "ok" | "rate-limited"
+    int32_t weekly_pct;
+    int32_t weekly_reset_min;
+    char    weekly_status[16];
+    int32_t monthly_pct;
+    int32_t monthly_reset_min;
+    char    monthly_status[16];
+    bool    valid;
+} usage_opencode_t;
+
+typedef struct {
     char                  updated_at[32];      // RFC3339
     usage_active_block_t  active_block;
     usage_bucket_t        weekly;
@@ -75,6 +88,7 @@ typedef struct {
     usage_limits_t        limits;
     usage_weather_t       weather;
     usage_deepseek_t      deepseek;
+    usage_opencode_t      opencode;
     bool                  stale;
 } usage_report_t;
 
