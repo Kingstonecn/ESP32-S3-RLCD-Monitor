@@ -102,79 +102,6 @@ static int voltage_to_pct(float volt)
 
 static int smooth_bat_pct = -1;  // exponential moving average
 
-// ---- Battery discharge-rate estimation ----
-#define BAT_HISTORY_MAX 16          // ~6.7h window at 25min intervals
-#define BAT_MIN_SPAN_SEC (2*3600)   // need ≥2h span for meaningful slope
-#define BAT_MIN_COUNT    4           // need ≥4 samples
-
-typedef struct {
-    uint32_t uptime_sec;  // seconds since boot
-    int      pct;         // smoothed percentage (0-100)
-} bat_record_t;
-
-static bat_record_t s_bat_history[BAT_HISTORY_MAX];
-static int s_bat_count = 0;
-
-/** Record one smoothed battery reading for the estimator. */
-static void bat_record_sample(int pct)
-{
-    if (pct < 0) return;
-    bat_record_t rec = {
-        .uptime_sec = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000,
-        .pct = pct,
-    };
-    if (s_bat_count >= BAT_HISTORY_MAX) {
-        // shift oldest out
-        memmove(&s_bat_history[0], &s_bat_history[1],
-                (BAT_HISTORY_MAX - 1) * sizeof(bat_record_t));
-        s_bat_history[BAT_HISTORY_MAX - 1] = rec;
-    } else {
-        s_bat_history[s_bat_count++] = rec;
-    }
-}
-
-int battery_estimate_remaining(void)
-{
-    if (s_bat_count < BAT_MIN_COUNT) return -1;
-
-    int n = s_bat_count;
-    uint32_t span = s_bat_history[n - 1].uptime_sec - s_bat_history[0].uptime_sec;
-    if (span < BAT_MIN_SPAN_SEC) return -1;
-
-    // Linear regression: pct ~ hours(since first sample)
-    double sum_x = 0, sum_y = 0;
-    for (int i = 0; i < n; ++i) {
-        double x = (double)(s_bat_history[i].uptime_sec - s_bat_history[0].uptime_sec) / 3600.0;
-        sum_x += x;
-        sum_y += s_bat_history[i].pct;
-    }
-    double mx = sum_x / n;
-    double my = sum_y / n;
-
-    double ss_xx = 0, ss_yy = 0, ss_xy = 0;
-    for (int i = 0; i < n; ++i) {
-        double x = (double)(s_bat_history[i].uptime_sec - s_bat_history[0].uptime_sec) / 3600.0;
-        double dx = x - mx;
-        double dy = s_bat_history[i].pct - my;
-        ss_xx += dx * dx;
-        ss_yy += dy * dy;
-        ss_xy += dx * dy;
-    }
-
-    // Must be discharging (negative slope), and enough linearity
-    if (ss_xx < 1e-9 || ss_xy >= 0) return -1;
-
-    double slope = ss_xy / ss_xx;                    // pct/hour (negative)
-    double r2 = (ss_xy * ss_xy) / ((ss_xx + 1e-9) * (ss_yy + 1e-9));
-    if (r2 < 0.7) return -1;                         // poor linear fit
-
-    double remaining_h = s_bat_history[n - 1].pct / (-slope);
-    if (remaining_h > 48.0) return -2;                // >2 days
-    if (remaining_h < 1.0)  return -3;                // <1 hour
-
-    return (int)(remaining_h + 0.5);                  // round to nearest hour
-}
-
 /** Return 0–100 battery percentage, or -1 if no battery detected.
  *  Samples multiple times and averages to smooth ADC noise; the caller is
  *  responsible for rate-limiting (battery voltage moves slowly, so we only
@@ -220,7 +147,6 @@ static int battery_read_pct(void)
     // Simple exponential smoothing
     if (smooth_bat_pct < 0) smooth_bat_pct = pct;
     else smooth_bat_pct = (int)(0.4f * pct + 0.6f * smooth_bat_pct);
-    bat_record_sample(smooth_bat_pct);
     ESP_LOGD(TAG, "battery: %.2fV → %d%% (smooth %d%%)", v, pct, smooth_bat_pct);
     return smooth_bat_pct;
 }
@@ -300,7 +226,7 @@ static void usage_poll_task(void *arg)
     cfg->task_handle = xTaskGetCurrentTaskHandle();
     g_poll_cfg = cfg;  // expose so key_task can wake us
     // Battery voltage changes slowly; only sample every N polls to keep the
-    // ADC (and its reference) idle. With RLCD_POLL_SEC=300 this reads ~25 min.
+    // ADC (and its reference) idle. With RLCD_POLL_SEC=300 this reads ~10 min.
     // First poll always reads so the icon shows up immediately.
     int bat_counter = 0;
     for (;;) {
@@ -333,20 +259,8 @@ static void usage_poll_task(void *arg)
                     ui_app_mark_stale();
                 }
                 bool read_bat = (bat_counter == 0);
-                if (++bat_counter >= 5) bat_counter = 0;
-                int pct = read_bat ? battery_read_pct() : smooth_bat_pct;
-                ui_app_set_battery(pct, false);
-                // Update remaining-time estimate
-                char remain[12];
-                int rem = battery_estimate_remaining();
-                if (rem < 0) {
-                    if (rem == -2)      snprintf(remain, sizeof(remain), ">2d");
-                    else if (rem == -3) snprintf(remain, sizeof(remain), "<1h");
-                    else                snprintf(remain, sizeof(remain), "--");
-                } else {
-                    snprintf(remain, sizeof(remain), "%dh", rem);
-                }
-                ui_app_set_battery_remaining(remain);
+                if (++bat_counter >= 2) bat_counter = 0;
+                ui_app_set_battery(read_bat ? battery_read_pct() : smooth_bat_pct, false);
                 Lvgl_unlock();
             }
         }

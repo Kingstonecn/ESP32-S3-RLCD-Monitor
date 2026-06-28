@@ -19,7 +19,6 @@ static lv_obj_t *lbl_env;            // "FC 21°C / IN 26.3°C / RH 65%" (14px)
 static lv_obj_t *img_wifi;
 static lv_obj_t *img_battery;
 static lv_obj_t *lbl_bat_pct;        // "85%"
-static lv_obj_t *lbl_bat_remain;      // "12h"
 
 // DeepSeek centered brand
 static lv_obj_t *img_brand;        // brand icon (deepseek)
@@ -153,7 +152,6 @@ void ui_app_init(void)
     img_wifi   = mkrawicon(s, 372, 4, &icon_wifi);
     img_battery = mkrawicon(s, 344, 4, &icon_bat_full);
     lbl_bat_pct = mkalign(s, 300, 8, 40, LV_TEXT_ALIGN_RIGHT, &lv_font_montserrat_14, "-");
-    lbl_bat_remain = mkalign(s, 248, 8, 48, LV_TEXT_ALIGN_RIGHT, &font_amt14, "--");
 
     // ---- header line 2: FC / IN / RH ----
     lbl_env = mklabel(s, 10, 44, &lv_font_montserrat_14,
@@ -373,7 +371,6 @@ void ui_app_set_battery(int level, bool charging)
     if (level < 0) {
         lv_obj_add_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
         if (lbl_bat_pct) lv_label_set_text(lbl_bat_pct, "");
-        if (lbl_bat_remain) lv_label_set_text(lbl_bat_remain, "");
         return;
     }
     lv_obj_remove_flag(img_battery, LV_OBJ_FLAG_HIDDEN);
@@ -387,13 +384,6 @@ void ui_app_set_battery(int level, bool charging)
         char b[12];
         snprintf(b, sizeof(b), "%d%%", level);
         lv_label_set_text(lbl_bat_pct, b);
-    }
-}
-
-void ui_app_set_battery_remaining(const char *text)
-{
-    if (lbl_bat_remain) {
-        lv_label_set_text(lbl_bat_remain, text);
     }
 }
 

@@ -76,7 +76,7 @@ esp_err_t wifi_app_connect_blocking(const char *ssid, const char *password)
     // (CPU + radio pause) between events. This is the single biggest static
     // current lever; the modem-sleep-only path stays awake at reduced clock.
     esp_pm_config_t pm = {
-        .max_freq_mhz = 240,
+        .max_freq_mhz = 160,
         .min_freq_mhz = 80,
         .light_sleep_enable = true,
     };
