@@ -61,6 +61,17 @@ def _openmeteo_condition(code: int, cloud_cover: float, precip: float) -> tuple[
         return "Fog", "fog"
     if code in (71, 73, 75, 77, 85, 86):
         return "Snow", "snow"
+    # WMO rain codes — prioritize the weather code over instantaneous
+    # precipitation, since precip can be 0 between showers on a rainy day.
+    if code in (51, 53, 55):      # drizzle
+        return "Drizzle", "rain"
+    if code in (61, 63):          # rain
+        return "Rain", "rain"
+    if code in (65, 80, 81, 82):  # heavy / showers
+        return "Heavy", "rain"
+    if code in (95, 96, 99):      # thunderstorm
+        return "Storm", "rain"
+    # Fallback: instantaneous precipitation & cloud cover
     if precip >= 2.0:
         return "Heavy", "rain"
     if precip >= 0.3:
