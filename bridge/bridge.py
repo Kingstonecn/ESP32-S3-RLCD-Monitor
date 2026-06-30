@@ -12,7 +12,7 @@ import os
 import threading
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +39,9 @@ from sources.weather import fetch_weather
 from sources.deepseek import fetch_deepseek
 from sources.opencode import fetch_opencode_go
 
+
+def _local_now():
+    return datetime.now(timezone.utc) + timedelta(hours=8)
 
 REFRESH_INTERVAL_SEC = int(os.environ.get("RLCD_REFRESH_SEC", "45"))
 INCLUDE_OTHERS = os.environ.get("RLCD_INCLUDE_OTHERS", "1") != "0"
@@ -201,7 +204,7 @@ def _build_live_report() -> UsageReport:
         weekly=empty, today=empty, month=empty, lifetime=empty
     )
     return UsageReport(
-        updated_at=datetime.now(timezone.utc),
+        updated_at=_local_now(),
         claude=claude,
         other=[],
         weather=fetch_weather(),
@@ -266,7 +269,7 @@ def _start_refresher() -> None:
 
 
 def _mock_report() -> UsageReport:
-    now = datetime.now(timezone.utc)
+    now = _local_now()
     return UsageReport(
         updated_at=now,
         source="mock",
