@@ -221,6 +221,27 @@ def _refresh_once() -> None:
     try:
         rep = _build_live_report()
         with _cache_lock:
+            old = _cache.get("report")
+            # Guard: if ccusage temporarily returns empty (npx cold start,
+            # JSONL file locked during write, etc.), don't let zeros
+            # overwrite previously valid data on the display.
+            if (old is not None and isinstance(old, UsageReport)
+                    and old.deepseek is not None and old.deepseek.today_tokens > 0
+                    and rep.deepseek is not None and rep.deepseek.today_tokens == 0):
+                rep.deepseek.today_tokens = old.deepseek.today_tokens
+                rep.deepseek.today_cost_cny = old.deepseek.today_cost_cny
+                rep.deepseek.today_cache_pct = old.deepseek.today_cache_pct
+                rep.deepseek.today_label = old.deepseek.today_label
+                if rep.deepseek.month_tokens == 0 and old.deepseek.month_tokens > 0:
+                    rep.deepseek.month_tokens = old.deepseek.month_tokens
+                    rep.deepseek.month_cost_cny = old.deepseek.month_cost_cny
+                    rep.deepseek.month_cache_pct = old.deepseek.month_cache_pct
+            # Also guard: if the whole deepseek object disappeared (API error
+            # + ccusage failed), keep the previous deepseek data on screen.
+            if (old is not None and isinstance(old, UsageReport)
+                    and old.deepseek is not None
+                    and rep.deepseek is None):
+                rep.deepseek = old.deepseek
             _cache.update(report=rep, ts=time.time(), error=None)
     except Exception as e:
         with _cache_lock:
